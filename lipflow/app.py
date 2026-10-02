@@ -45,6 +45,11 @@ class Options:
     paste: bool = True
     live_preview: bool = True
     onboard: bool = False
+    language: str | None = None
+    cleanup_mode: str | None = None
+    confidence_policy: str | None = None
+    min_margin: float = 0.5
+    input_mode: str | None = None
 
 
 def ui(fn, *args, **kw):
@@ -58,7 +63,14 @@ class Lipflow(NSObject):
             return None
         self.opts = opts
         self.reader: LipReader | None = None
-        self.cleaner = Cleaner(opts.backend)
+        settings = load_settings()
+        opts.language = opts.language or settings.get("language", "en")
+        opts.cleanup_mode = opts.cleanup_mode or settings.get("cleanup_mode", "faithful")
+        opts.confidence_policy = opts.confidence_policy or settings.get("confidence_policy", "review")
+        opts.input_mode = opts.input_mode or settings.get("input_mode", "whisper" if settings.get("whisper") else "silent")
+        self.cleaner = Cleaner(opts.backend, opts.cleanup_mode, opts.language)
+        self.last_raw = ""
+        self.review_pending = False
         self.jobs: "queue.Queue" = queue.Queue()
         self.session = 0          # bumps on every start/cancel so stale previews are dropped
         self.preview_busy = False
@@ -76,6 +88,7 @@ class Lipflow(NSObject):
         self.setup = None
         self.loading = True
         self.settings = load_settings()
+        self.settings["whisper"] = opts.input_mode == "whisper"
         cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
         if opts.key == "right_option" and self.settings.get("key"):
             opts.key = self.settings["key"]
@@ -86,6 +99,8 @@ class Lipflow(NSObject):
     @objc.python_method
     def start(self):
         self.hud = HUD.alloc().init()
+        from .review import Review
+        self.review = Review.alloc().init()
         self._build_menu()
         self.ptt = PushToTalk(self.opts.key, self.on_start, self.on_stop, self.on_cancel)
         try:
@@ -127,6 +142,23 @@ class Lipflow(NSObject):
                    "Not personalised yet: run lipflow import-wispr", None, icon="person.text.rectangle")
         menu.addItem_(NSMenuItem.separatorItem())
         self._camera_menu(menu)
+        for title, key, items in [
+            ("Language / 识别语言 (restart)", "language", [("English", "en"), ("中文 · CMLR research", "zh")]),
+            ("Cleanup mode / 纠错模式 (restart)", "cleanup_mode", [("Faithful / 忠实转写", "faithful"), ("Polish / 润色", "polish")]),
+            ("Candidate policy (restart)", "confidence_policy", [("Review / 确认候选", "review"), ("Heuristic auto / 自动", "auto")]),
+            ("Input mode (restart)", "input_mode", [("Silent / 无声", "silent"), ("Whisper / 低声", "whisper")]),
+        ]:
+            parent = self._item(menu, title, None)
+            parent.setEnabled_(True)
+            sub = NSMenu.alloc().init()
+            for label, value in items:
+                item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(label, "setPreference:", "")
+                item.setTarget_(self)
+                item.setRepresentedObject_(json.dumps([key, value]))
+                item.setState_(int(getattr(self.opts, key) == value))
+                sub.addItem_(item)
+            parent.setSubmenu_(sub)
+        self._item(menu, "Copy raw recognition", "copyRaw:", icon="doc.on.clipboard")
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
         self._item(menu, "Open history", "openHistory:", icon="clock.arrow.circlepath")
         self._item(menu, "Edit custom words…", "openWords:", icon="character.book.closed")
@@ -158,6 +190,12 @@ class Lipflow(NSObject):
             self.cam_items.append(it)
         parent.setSubmenu_(sub)
 
+    def setPreference_(self, sender):
+        key, value = json.loads(sender.representedObject())
+        self.settings[key] = value
+        save_settings(self.settings)
+        self.hud.show("done", "Saved / 已保存", "Restart Lipflow to apply / 重启后生效", 4.0)
+
     def pickCamera_(self, sender):
         cam_id = sender.representedObject()
         self.settings["camera"] = cam_id
@@ -186,6 +224,10 @@ class Lipflow(NSObject):
         return it
 
     # -- menu actions --------------------------------------------------------------
+    def copyRaw_(self, sender):
+        if self.last_raw:
+            copy_text(self.last_raw)
+
     def copyLast_(self, sender):
         if self.last_output:
             copy_text(self.last_output)
@@ -209,6 +251,9 @@ class Lipflow(NSObject):
 
     @objc.python_method
     def show_setup(self, start_at: str = "welcome"):
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            self.hud.show("error", "Lip training / 唇读训练", "Switch to silent mode and restart / 请切换无声模式并重启", 4.0)
+            return
         from .onboarding import Onboarding
         if self.setup is None:
             self.setup = Onboarding.alloc().initWithApp_(self)
@@ -229,6 +274,8 @@ class Lipflow(NSObject):
     # -- hotkey callbacks (main thread) -------------------------------------------
     @objc.python_method
     def on_start(self, hands_free: bool):
+        if self.review_pending:
+            return
         if self.loading:
             self.hud.show("error", "Still loading", "The model is almost ready…", hide_after=1.5)
             return
@@ -242,8 +289,11 @@ class Lipflow(NSObject):
         self.hands_free = hands_free
         from .context import Context, capture
         # the app you're typing into is frontmost right now
-        self.ctx = capture() if self.settings.get("use_context", True) else Context()
+        self.ctx = capture()
+        if not self.settings.get("use_context", True):
+            self.ctx.names = []
         rec = self.camera.start_recording()
+        rec.ctx = self.ctx
         if self.whisper_on:
             self.mic.start()
         self._set_status_icon(True)
@@ -271,10 +321,13 @@ class Lipflow(NSObject):
         audio = self.mic.stop() if self.whisper_on else []
         if rec is not None:
             rec.audio = audio
+            rec.session = token
             self.jobs.put(("final", rec))
 
     @objc.python_method
     def on_cancel(self, silent: bool = False):
+        self.review.dismiss()
+        self.review_pending = False
         self.pending_stop = None
         self.mic.stop()
         self._set_status_icon(False)
@@ -317,7 +370,7 @@ class Lipflow(NSObject):
     # -- model thread --------------------------------------------------------------
     @objc.python_method
     def _preview_loop(self, session: int, rec: Recording):
-        if not self.opts.live_preview:
+        if not self.opts.live_preview or (self.opts.language == "zh" and self.opts.input_mode == "whisper"):
             return
         waited = 0.0
         while self.session == session:
@@ -349,7 +402,7 @@ class Lipflow(NSObject):
                 elif job[0] == "whisper":
                     self._load_whisper()
                 elif job[0] == "reload":  # e.g. face model reset from Settings
-                    self.reader = LipReader(beam_size=self.opts.beam)
+                    self.reader = LipReader(beam_size=self.opts.beam, language=self.opts.language)
                     self.reader.warmup()
             except Exception as e:
                 import traceback
@@ -362,8 +415,16 @@ class Lipflow(NSObject):
     @objc.python_method
     def _load(self):
         t = time.time()
-        self.reader = LipReader(beam_size=self.opts.beam)
-        self.reader.warmup()
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            self.reader = None  # quiet-speech ASR does not require research-only CMLR weights
+        else:
+            self.reader = LipReader(beam_size=self.opts.beam, language=self.opts.language)
+            self.reader.warmup()
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            from .whisper import ChineseWhisper
+            ui(self.hud.set_text, "Loading Chinese quiet-speech model (first run downloads ~1.6 GB)…")
+            self.zh_whisper = ChineseWhisper()
+            self.zh_whisper.load()
         if self.cleaner.backend == "local":
             ui(self.hud.set_text, "Loading the text-cleanup model…")
             try:
@@ -373,24 +434,31 @@ class Lipflow(NSObject):
                 self.cleaner.backend, self.cleaner.model = "basic", None
         self.loading = False
         print(f"[lipflow] model ready in {time.time() - t:.1f}s "
-              f"(encoder on {self.reader.enc_device}, cleanup: {self.cleaner.describe()})")
+              f"(encoder on {self.reader.enc_device if self.reader else 'CPU quiet-speech'}, cleanup: {self.cleaner.describe()})")
         name = self.opts.key.replace("_", " ").title()
         ui(self.state_item.setTitle_, "Ready")
         ui(self.state_item.setImage_, symbol("checkmark.circle", 13, NSFontWeightRegular))
-        if self.settings.get("whisper"):
+        if self.settings.get("whisper") and self.opts.language == "en":
             self.jobs.put(("whisper",))
-        if self.opts.onboard or not self.settings.get("onboarded"):
+        if self.opts.language == "en" and (self.opts.onboard or not self.settings.get("onboarded")):
             ui(self.show_setup)
         else:
-            ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
+            if self.opts.language == "zh" and self.opts.input_mode == "silent":
+                ui(self.hud.show, "done", "中文唇读测试模式", "自由句子识别尚未通过验收，请逐条核对候选", 6.0)
+            else:
+                ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
 
     @property
     def whisper_on(self) -> bool:
-        return bool(self.settings.get("whisper")) and self.av_reader is not None and self.onboarding is None
+        return ((self.opts.input_mode == "whisper" and self.opts.language == "zh") or
+                (self.opts.language == "en" and bool(self.settings.get("whisper")) and self.av_reader is not None)) and self.onboarding is None
 
     @objc.python_method
     def _load_whisper(self):
         """Model thread: download (first time, 1.8 GB) and load the audio-visual model."""
+        if self.opts.language != "en":
+            ui(self.hud.show, "error", "English AV model", "Use --language zh --input-mode whisper for Chinese audio", 5.0)
+            return
         from . import av
         if not av.available():
             ui(self.hud.show, "reading", "Whisper mode", "Downloading the audio-visual model (1.8 GB)…")
@@ -415,7 +483,7 @@ class Lipflow(NSObject):
         wave = segment(rec.audio, ts[0], rois.shape[0])
         if wave is None:
             return None
-        return self.av_reader.beam_search(self.av_reader.encode_av(rois, wave), nbest=5)
+        return self.av_reader.hypotheses(self.av_reader.encode_av(rois, wave), nbest=5)
 
     @objc.python_method
     def _rois(self, rec: Recording):
@@ -448,7 +516,11 @@ class Lipflow(NSObject):
             ui(self.hud.show, "error", problem[0], problem[1], 2.2)
             return
         rois = self._rois(rec)
-        enc = self.reader.encode(rois)
+        if rois is None:
+            ui(self.hud.show, "error", "No face", "Face the camera / 请正对摄像头", 3.0)
+            return
+        enc = (None if self.opts.language == "zh" and self.opts.input_mode == "whisper" and
+               self.onboarding is None else self.reader.encode(rois))
         t_enc = time.time() - t0
         if self.onboarding is not None:  # practice clip: keep it with its known text, don't paste
             raw = self.reader.greedy(enc)
@@ -456,44 +528,83 @@ class Lipflow(NSObject):
             ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
             ui(self.hud.hide)
             return
-        # Whisper mode reads empty when there's no audible whisper (silent mouthing): fall back to lips
-        candidates = self._av_candidates(rec, rois)
-        if not candidates or not candidates[0]:
-            if candidates is not None:
-                print("[lipflow] lips + audio read nothing, using lips only")
-            candidates = self.reader.beam_search(enc, nbest=5)
-        t_beam = time.time() - t0 - t_enc
-        if not candidates or not candidates[0]:
-            print(f"[lipflow] {rec.duration:.1f}s clip: nothing read")
-            ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
+        hypotheses = self.reader.hypotheses(enc, nbest=5) if enc is not None else []
+        if self.opts.language == "en":
+            av_hypotheses = self._av_candidates(rec, rois)
+            if av_hypotheses:
+                hypotheses = av_hypotheses
+        elif self.opts.input_mode == "whisper":
+            from .whisper import ChineseWhisper
+            from .mic import segment
+            ts, _, _ = rec.snapshot()
+            wave = segment(getattr(rec, "audio", []), ts[0], len(rois))
+            if not hasattr(self, "zh_whisper"):
+                self.zh_whisper = ChineseWhisper()
+            hypotheses = self.zh_whisper.hypotheses(wave)
+        greedy = self.reader.greedy(enc) if self.opts.input_mode != "whisper" else ""
+        from .delivery import choose_result, quality_for
+        ctx = getattr(rec, "ctx", None)
+        decision, result, choices = choose_result(hypotheses, greedy, quality_for(rec, rois),
+            self.cleaner, ctx, " ".join(self.context[-3:]), self.opts.confidence_policy, self.opts.min_margin)
+        ui(self._deliver, rec, rois, hypotheses, decision, result, choices, time.time()-t0)
+
+    @objc.python_method
+    def _deliver(self, rec, rois, hypotheses, decision, result, choices, latency):
+        if self.session != rec.session:
+            return  # cancelled or superseded while the model was running
+        if decision.action == "retry":
+            self.hud.show("error", "Please repeat / 请重说", decision.reason, 5.0)
             return
-        ui(self.hud.set_text, candidates[0].lower())
-        ctx = getattr(self, "ctx", None)
-        text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=ctx.names if ctx else None)
-        t_all = time.time() - t0
-        if ctx and ctx.names:
-            print(f"[lipflow] context: {ctx.app}, {len(ctx.names)} names")
-        print(f"[lipflow] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
-              f"          → typed: {text!r}  (encode {t_enc:.2f}s, beam {t_beam:.2f}s, total {t_all:.2f}s)")
-        if not text:
-            ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
+        self.last_raw = result.raw
+        if decision.action == "review" or result.needs_review:
+            self.review_pending = True
+            reason = "\n".join([decision.reason, *result.warnings, "Target: " + rec.ctx.describe()])
+            self.hud.hide()
+            self.review.show(choices, reason, lambda text: self._selected(rec, rois, hypotheses,
+                decision, result, latency, text))
+        else:
+            self._publish(rec, rois, hypotheses, decision, result, latency, result.text)
+
+    @objc.python_method
+    def _selected(self, rec, rois, hypotheses, decision, result, latency, text):
+        self.review_pending = False
+        if text is None or self.session != rec.session:
+            return
+        from .delivery import restore_target
+        if self.opts.paste:
+            restore_target(rec.ctx)
+        AppHelper.callLater(0.18, self._publish, rec, rois, hypotheses, decision, result, latency, text)
+
+    @objc.python_method
+    def _publish(self, rec, rois, hypotheses, decision, result, latency, text):
+        if self.session != rec.session:
+            return
+        from .delivery import target_is_current, quality_for
+        ctx = rec.ctx
+        if self.opts.paste and not target_is_current(ctx):
+            copy_text(text)
+            self.hud.show("done", "Copied / 已复制", "Target changed; paste manually / 输入位置已变，请手动粘贴", 5.0)
+            self.last_output = text
             return
         out = text
-        if self.last_paste_at and time.time() - self.last_paste_at < JOIN_WINDOW:
+        if self.opts.language == "en" and self.last_paste_at and time.time()-self.last_paste_at < JOIN_WINDOW:
             out = " " + text
         self.last_output = text
         self.last_paste_at = time.time()
         self.context.append(text)
-        self._log(rec, candidates, text, t_all)
-        self._save_clip(rois, candidates, text)
-        if self.opts.paste:
-            ui(paste_text, out)
-            if ctx is not None and ctx.element is not None and self.settings.get("learn_corrections", True):
-                from .corrections import Watcher
-                ui(lambda: Watcher(ctx.element, ctx.value, out, rois, candidates).start())
-        else:
-            ui(copy_text, text)
-        ui(self.hud.show, "done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
+        candidates = [h.text for h in hypotheses]
+        log_history(rec, candidates, text, latency, self.cleaner.describe(),
+                    evidence={"hypotheses": [{"text": h.text, "score": h.score, "token_count": h.token_count}
+                                              for h in hypotheses], "assessment": decision.asdict(),
+                              "quality": vars(quality_for(rec, rois)),
+                              "cleanup_proposed": result.proposed, "warnings": result.warnings,
+                              "language": self.opts.language})
+        keep_clip(rois, candidates, text, self.settings)
+        (paste_text if self.opts.paste else copy_text)(out if self.opts.paste else text)
+        if self.opts.paste and ctx.element is not None and self.settings.get("learn_corrections", True):
+            from .corrections import Watcher
+            Watcher(ctx.element, ctx.value, out, rois, candidates).start()
+        self.hud.show("done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
 
     @objc.python_method
     def _save_clip(self, rois, candidates, text):
@@ -503,15 +614,15 @@ class Lipflow(NSObject):
     def _train(self, ob):
         """Onboarding: personal LM (if phrases) then face adaptation with a held-out check."""
         self.loading = True
-        r = train_on_face(self.opts.beam, ob.report)
+        r = train_on_face(self.opts.beam, ob.report, self.opts.language)
         if r["after"] is None:
             self.loading = False
             ob.finished(0, None, False, r["note"])
             return
-        self.reader = LipReader(beam_size=self.opts.beam)
+        self.reader = LipReader(beam_size=self.opts.beam, language=self.opts.language)
         self.reader.warmup()
         self.loading = False
-        self.settings["training"] = {"before": r["before"], "after": r["after"], "kept": r["kept"],
+        self.settings["training" if self.opts.language == "en" else "training_zh"] = {"before": r["before"], "after": r["after"], "kept": r["kept"],
                                      "clips": r["clips"], "at": time.time()}
         save_settings(self.settings)
         ob.finished(r["before"], r["after"], r["kept"], r["note"])

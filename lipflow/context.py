@@ -28,6 +28,7 @@ class Context:
     near_text: str = ""
     names: list[str] = field(default_factory=list)
     element: object = None   # the focused text field (for learning from corrections); memory only
+    target: int = 0          # PID on macOS / HWND on Windows
     value: str = ""          # its full contents before the paste; memory only
 
     def describe(self) -> str:
@@ -44,7 +45,16 @@ def _ax(el, attr):
 def extract_names(*texts: str, limit: int = 30) -> list[str]:
     """Capitalised words that aren't sentence starts or common words: names, products, places."""
     seen, out = set(), []
+    from .text import HAN
     for t in texts:
+        # Only explicit recipient/title markers, never arbitrary runs of Chinese prose.
+        patterns = [rf"(?:收件人|发送给|联系人)\s*[:：]\s*([{HAN}]{{2,12}})(?=$|[\s，,；;<>])",
+                    rf"([{HAN}]{{2,12}})\s*[（(](?:私聊|DM)[）)]"]
+        for pattern in patterns:
+            for w in re.findall(pattern, t or ""):
+                if w not in seen:
+                    seen.add(w)
+                    out.append(w)
         for sent in re.split(r"[.!?\n|•·—\-–:]+", t or ""):
             toks = re.findall(r"[A-Za-z][A-Za-z'\-]+", sent)
             for i, w in enumerate(toks):
@@ -70,6 +80,7 @@ def _capture_windows(ctx: Context) -> Context:
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return ctx
+    ctx.target = int(hwnd)
     buf = ctypes.create_unicode_buffer(512)
     user32.GetWindowTextW(hwnd, buf, 512)
     ctx.title = buf.value
@@ -98,6 +109,7 @@ def capture(max_chars: int = 600) -> Context:
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if app is None:
             return ctx
+        ctx.target = int(app.processIdentifier())
         ctx.app = str(app.localizedName() or "")
         ax_app = AXUIElementCreateApplication(app.processIdentifier())
         win = _ax(ax_app, "AXFocusedWindow")
@@ -108,7 +120,9 @@ def capture(max_chars: int = 600) -> Context:
             val = _ax(focused, "AXValue")
             if isinstance(val, str):
                 ctx.element, ctx.value = focused, val
-                ctx.near_text = val[-max_chars:]
+                selection = _ax(focused, "AXSelectedTextRange")
+                pos = int(selection.location) if selection is not None and hasattr(selection, "location") else len(val)
+                ctx.near_text = val[max(0, pos-max_chars//2):pos+max_chars//2]
             if not ctx.near_text:
                 ph = _ax(focused, "AXPlaceholderValue")  # e.g. Slack's "Message Miguel"
                 if isinstance(ph, str):

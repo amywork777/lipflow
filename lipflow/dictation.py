@@ -51,12 +51,12 @@ def rois_for(rec):
     return mouth_rois([grays[i] for i in idx], [anchors[i] for i in idx])
 
 
-def log_history(rec, candidates, text, secs, cleanup: str):
+def log_history(rec, candidates, text, secs, cleanup: str, evidence=None):
     os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
     with open(HISTORY, "a", encoding="utf-8") as f:
         f.write(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "seconds": round(rec.duration, 2),
                             "raw": candidates, "text": text, "latency": round(secs, 2),
-                            "cleanup": cleanup}) + "\n")
+                            "cleanup": cleanup, **({"evidence": evidence} if evidence else {})}) + "\n")
 
 
 def keep_clip(rois, candidates, text, settings: dict):
@@ -73,7 +73,7 @@ def keep_clip(rois, candidates, text, settings: dict):
         os.remove(os.path.join(d, f))
 
 
-def train_on_face(beam: int, report) -> dict:
+def train_on_face(beam: int, report, language="en") -> dict:
     """Personal LM (if you imported phrases), then face adaptation with a held-out check.
 
     report(pct, text) gets progress. Returns {"before", "after", "kept", "clips", "note"};
@@ -87,7 +87,7 @@ def train_on_face(beam: int, report) -> dict:
     from .train_vsr import finetune, save
     from .vsr import LipReader
     note = ""
-    if os.path.exists(PHRASES):
+    if language == "en" and os.path.exists(PHRASES):
         report(3, "Learning how you talk from your phrases…")
         from .train_lm import train as train_lm
         try:
@@ -96,8 +96,8 @@ def train_on_face(beam: int, report) -> dict:
                     if r["saved"] else "")
         except Exception as e:
             print(f"[lipflow] train-lm failed: {e}")
-    clips = saved_clips()
-    learned = corrections.load_all()
+    clips = saved_clips(language)
+    learned = corrections.load_all(language)
     if len(clips) < N_HELD_OUT + 6:
         return {"before": 0, "after": None, "kept": False, "clips": len(clips),
                 "note": "Not enough practice clips to train on. Run setup again from the menu."}
@@ -105,7 +105,7 @@ def train_on_face(beam: int, report) -> dict:
     # held out: practice clips only (their text is certain); corrections only ever train
     test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:] + learned
     report(15, f"Measuring the standard model on {len(test)} of your sentences…")
-    base = LipReader(beam_size=beam, personal=False)
+    base = LipReader(beam_size=beam, personal=False, language=language)
 
     def score(reader):
         e = n = 0

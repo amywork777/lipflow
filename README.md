@@ -1,5 +1,7 @@
 # Lipflow
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 **Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
 text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
 
@@ -12,6 +14,16 @@ Everything runs locally on your Mac or Windows PC. An optional LLM pass fixes th
                                        ▲
                      live preview: greedy CTC every 0.45 s while you talk
 ```
+
+## Mandarin lipreading and reviewed dictation
+
+Mandarin visual-only recognition uses the author's CMLR checkpoint and Chinese character vocabulary. Install the optional research model and run `lipflow run --language zh --cleanup basic --confidence-policy review`. Results open a candidate chooser for confirmation. See the bilingual [Mandarin installation and usage guide](docs/CHINESE.md) and [validation record](docs/VALIDATION.md).
+
+The separate CNVSRC research workflow adds deterministic Chinese-LiPS sampling, speaker-separated train/dev/test partitions, bounded CTC or joint CTC/attention encoder adaptation, resumable completed epochs, development-only decoder selection and frozen paired test evaluation. It reads video frames without audio or LLM cleanup and does not automatically replace the GUI model. The bilingual [public-data workflow](docs/chinese-public-adaptation.md) includes pinned sources, reproduction commands and license requirements. The existing [silent collection tool](docs/CHINESE_ADAPTATION.md) can collect operator-confirmed webcam clips when a camera is available.
+
+A focused candidate chooser accepts 1–3 or Esc. Decoder scores, CTC agreement and camera quality are retained as routing features; scores are not calibrated probabilities. Mandarin requires confirmation. All cleanup backends share sensitive-edit checks, with faithful and reviewed polish modes. The chooser, history and Copy raw recognition menu retain the original transcript. The bilingual [evaluation protocol](docs/CHINESE_EVALUATION.md) reports raw CER, sentence accuracy, latency and data conditions. Public voiced mouth crops do not establish deliberate silent webcam performance.
+
+An optional Mandarin quiet-speech mode uses local Whisper ASR with a visual quality gate and requires audible speech; its installation is documented separately in the Mandarin guide. Ongoing work will improve visual recognition, domain adaptation and independently measured camera performance.
 
 ## Setup
 

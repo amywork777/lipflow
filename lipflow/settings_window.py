@@ -16,7 +16,7 @@ from Foundation import NSObject
 
 from .hud import ACCENT, GREEN, _glass, _rgb, symbol
 from .onboarding import GlassWindow, _text
-from .paths import HOME, PERSONAL_VSR
+from .paths import HOME, personal_vsr
 
 SW, SH = 560, 700
 
@@ -87,14 +87,14 @@ class Settings(NSObject):
         # -- training ------------------------------------------------------------------
         y = SH - 110
         _text(p, NSMakeRect(36, y, 400, 18), "TRAINING ON YOUR FACE", 11, NSFontWeightSemibold, color=_rgb(ACCENT))
-        n = len(saved_clips())
-        t = s.get("training")
+        n = len(saved_clips(self.app.opts.language))
+        t = s.get("training" if self.app.opts.language == "en" else "training_zh")
         if t:
             line = (f"{t['clips']} practice clips. Last training ({time.strftime('%b %-d', time.localtime(t['at']))}): "
                     f"words read correctly on held-out sentences {1 - t['before']:.0%} → {1 - t['after']:.0%}"
                     + ("" if t["kept"] else ", not better, so the standard model is used."))
         else:
-            line = f"{n} practice clips so far." + (" Not trained yet." if not os.path.exists(PERSONAL_VSR) else "")
+            line = f"{n} practice clips so far." + (" Not trained yet." if not os.path.exists(personal_vsr(self.app.opts.language)) else "")
         from . import corrections
         nc = corrections.count()
         if nc:
@@ -104,7 +104,7 @@ class Settings(NSObject):
               "Each round is 24 new sentences (about 5 minutes) and it retrains on everything you've recorded. "
               "More rounds keep improving it.", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Practice & train more", "trainMore:", NSMakeRect(36, y - 132, 220, 36), True))
-        if os.path.exists(PERSONAL_VSR):
+        if os.path.exists(personal_vsr(self.app.opts.language)):
             p.addSubview_(_capsule(self, "Reset face model", "resetFace:", NSMakeRect(270, y - 132, 170, 36)))
 
         # -- general -------------------------------------------------------------------
@@ -127,6 +127,7 @@ class Settings(NSObject):
                                          s.get("learn_corrections", True), "toggleLearn:")
         self.whisper_switch = self._switch(p, y - 250, "Whisper mode: lips + a soft whisper (uses the mic)",
                                            s.get("whisper", False), "toggleWhisper:")
+        self.whisper_switch.setEnabled_(self.app.opts.language == "en")
         _text(p, NSMakeRect(36, y - 288, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Open my data folder", "openData:", NSMakeRect(36, 40, 190, 34)))
         _text(p, NSMakeRect(240, 48, SW - 276, 18), "Clips, phrases, your trained models. Never uploaded.",
@@ -171,9 +172,9 @@ class Settings(NSObject):
         self.app.show_setup(start_at="practice")
 
     def resetFace_(self, sender):
-        if os.path.exists(PERSONAL_VSR):
-            os.remove(PERSONAL_VSR)
-        self.app.settings.pop("training", None)
+        if os.path.exists(personal_vsr(self.app.opts.language)):
+            os.remove(personal_vsr(self.app.opts.language))
+        self.app.settings.pop("training" if self.app.opts.language == "en" else "training_zh", None)
         self._save()
         self.app.jobs.put(("reload",))
         self.build()
@@ -205,6 +206,8 @@ class Settings(NSObject):
     def toggleWhisper_(self, sender):
         on = bool(sender.state())
         self.app.settings["whisper"] = on
+        self.app.settings["input_mode"] = "whisper" if on else "silent"
+        self.app.opts.input_mode = self.app.settings["input_mode"]
         self._save()
         if on and self.app.av_reader is None:
             self.app.jobs.put(("whisper",))  # downloads the model the first time

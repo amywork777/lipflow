@@ -23,7 +23,8 @@ KEEP = 500
 
 
 def _words(t: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", t.lower())
+    from .text import tokens
+    return tokens(t)
 
 
 def inserted_span(before: str, after: str) -> str:
@@ -40,6 +41,24 @@ def inserted_span(before: str, after: str) -> str:
 def find_correction(pasted: str, span: str) -> "str | None":
     """The corrected version of `pasted` inside `span`, or None if it wasn't corrected (or was
     rewritten beyond recognition). Words typed before/after the dictation are trimmed off."""
+    from .text import has_han, tokens
+    if has_han(pasted):
+        from .guard import edits
+        pw, sw = tokens(pasted), tokens(span)
+        if not pw or len(sw) < max(1, len(pw)-2):
+            return None
+        possibilities = []
+        max_change = max(2, int(len(pw)*0.4))
+        for start in range(min(len(sw), 30)):
+            for length in range(max(1, len(pw)-2), min(len(sw)-start, len(pw)+2)+1):
+                candidate = sw[start:start+length]
+                distance = edits(pw, candidate)
+                if 0 <= distance <= max_change:
+                    possibilities.append((distance, abs(length-len(pw)), start, candidate))
+        if not possibilities:
+            return None
+        best = min(possibilities)
+        return None if best[0] == 0 else "".join(best[3])
     pw, sw_raw = _words(pasted), re.findall(r"\S+", span)
     sw = [" ".join(_words(w)) for w in sw_raw]
     if not pw or not sw:
@@ -85,13 +104,16 @@ def count() -> int:
     return len(os.listdir(DIR)) if os.path.isdir(DIR) else 0
 
 
-def load_all() -> list[dict]:
+def load_all(language="en") -> list[dict]:
     if not os.path.isdir(DIR):
         return []
     out = []
     for f in sorted(os.listdir(DIR)):
         d = np.load(os.path.join(DIR, f), allow_pickle=True)
-        out.append({"rois": d["rois"], "text": str(d["text"])})
+        from .text import has_han
+        text = str(d["text"])
+        if has_han(text) == (language == "zh"):
+            out.append({"rois": d["rois"], "text": text})
     return out
 
 

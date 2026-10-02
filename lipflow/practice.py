@@ -56,11 +56,32 @@ HARVARD = [
 ]
 
 
-def practice_sentences(n: int = N_SENTENCES) -> list[str]:
+CHINESE = [
+    "今天下午我们一起讨论这个问题", "请把文件发给我的同事", "明天上午在办公室见面", "这个计划还需要继续完善",
+    "我想先了解事情的经过", "大家可以提出自己的意见", "会议结束以后给你回复", "请不要修改原来的内容",
+    "我们需要更多时间准备", "这个消息已经得到确认", "请帮我检查一下文字", "下次见面再详细介绍",
+    "这件事情没有那么简单", "谢谢你提供这些信息", "我会尽快完成这项工作", "现在还不能确定结果",
+    "请告诉我你的具体安排", "今天的天气非常不错", "我们可以换一种方法", "请把重要的内容记录下来",
+    "这份报告需要重新整理", "我已经收到了你的邮件", "请等一会再开始会议", "我们明天继续这个话题",
+    "请先确认大家都有时间", "这个地方距离公司很近", "我希望听到不同的建议", "请把问题说得更清楚一些",
+    "我们应该认真考虑这件事", "这个项目正在顺利进行", "请在下班之前给我回复", "大家的努力取得了进展",
+    "我会把结果告诉大家", "还有一些细节需要检查", "请不要忘记带上文件", "我们需要保持联系",
+    "今天的工作已经完成", "明天还有重要的任务", "请仔细阅读这份材料", "这个方案可以继续改进",
+    "我想听听你的看法", "我们一起解决这个问题", "请给我一个明确的答复", "这个决定需要大家同意",
+    "我正在准备相关资料", "会议的时间还没有确定", "请把最新的消息告诉我", "我们可以再讨论一次",
+    "这项工作需要共同完成", "请检查一下有没有错误", "我会按照计划开始工作", "这个结果令人满意",
+    "请尽快安排下一次会议", "我们需要更加详细的信息", "今天先完成最重要的事情", "明天早上我会联系你",
+    "请注意文件中的说明", "这个问题已经解决了", "我们还有很多事情要做", "谢谢大家的理解和支持",
+]
+
+
+def practice_sentences(n: int = N_SENTENCES, language="en") -> list[str]:
     """Half your own everyday sentences (from an imported Wispr Flow history: 5–12 words, no digits)
     for your real vocabulary, half Harvard sentences for even coverage of lip shapes; all Harvard
     if there's no history. Shuffled together."""
     from .personal import PHRASES
+    if language == "zh":
+        return random.sample(CHINESE, min(n, len(CHINESE)))
     mine = []
     if os.path.exists(PHRASES):
         for line in open(PHRASES, encoding="utf-8"):
@@ -76,16 +97,17 @@ def practice_sentences(n: int = N_SENTENCES) -> list[str]:
     return out
 
 
-def saved_clips() -> list[dict]:
+def saved_clips(language="en") -> list[dict]:
     items = []
-    for p in sorted(glob.glob(os.path.join(CLIPS, "*.npz"))):
+    for p in sorted(glob.glob(os.path.join(CLIPS if language == "en" else os.path.join(CLIPS, language), "*.npz"))):
         d = np.load(p, allow_pickle=True)
         items.append({"rois": d["rois"], "text": str(d["text"]), "path": p})
     return items
 
 
-def save_clip(rois, text: str, raw: str = "") -> str:
-    os.makedirs(CLIPS, exist_ok=True)
-    path = os.path.join(CLIPS, f"{int(time.time() * 1000)}.npz")
+def save_clip(rois, text: str, raw: str = "", language="en") -> str:
+    folder = CLIPS if language == "en" else os.path.join(CLIPS, language)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{int(time.time() * 1000)}.npz")
     np.savez_compressed(path, rois=rois, text=text, raw=raw or "")
     return path

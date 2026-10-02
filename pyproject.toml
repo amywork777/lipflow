@@ -22,6 +22,10 @@ dependencies = [
     "torch>=2.4",
 ]
 
+[project.optional-dependencies]
+chinese = ["gdown>=5.2,<6"]
+chinese-whisper = ["faster-whisper>=1.1,<2", "opencc-python-reimplemented>=0.1.7,<0.2"]
+
 [project.scripts]
 lipflow = "lipflow.__main__:main"
 

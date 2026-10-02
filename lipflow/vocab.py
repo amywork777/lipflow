@@ -32,7 +32,8 @@ def load() -> list[str]:
 
 def _hits(text: str, words: list[str]) -> int:
     t = f" {text.upper()} "
-    return sum(f" {w.upper()} " in t for w in words)
+    from .text import contains
+    return sum(contains(text, w) for w in words)
 
 
 def rerank(candidates: list[str], words: list[str]) -> list[str]:
@@ -44,5 +45,5 @@ def rerank(candidates: list[str], words: list[str]) -> list[str]:
 
 def apply_case(text: str, words: list[str]) -> str:
     for w in words:
-        text = re.sub(rf"\b{re.escape(w)}\b", w, text, flags=re.I)
+        text = re.sub(rf"(?<![a-z0-9_]){re.escape(w)}(?![a-z0-9_])", w, text, flags=re.I)
     return text

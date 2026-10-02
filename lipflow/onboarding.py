@@ -308,8 +308,8 @@ class Onboarding(NSObject):
         os.makedirs(CLIPS, exist_ok=True)
         # Every visit is a fresh round of new sentences; clips from earlier rounds are kept and the
         # model retrains on all of them, so practising again keeps improving it.
-        done = {c["text"] for c in saved_clips()}
-        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2) if x not in done][:N_SENTENCES]
+        done = {c["text"] for c in saved_clips(self.app.opts.language)}
+        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2, self.app.opts.language) if x not in done][:N_SENTENCES]
         self.i = 0
         prior = len(done)
         p = self._new_page("quote.bubble", "Mouth each sentence",
@@ -352,7 +352,7 @@ class Onboarding(NSObject):
             self.feedback.setTextColor_(_rgb(AMBER))
             self.feedback.setStringValue_(message)
             return
-        path = save_clip(rois, text, raw)
+        path = save_clip(rois, text, raw, self.app.opts.language)
         self.round_clips = getattr(self, "round_clips", []) + [path]
         self.feedback.setTextColor_(_rgb((1, 1, 1), 0.6))
         self.feedback.setStringValue_(f"Saved. The model read: \"{(raw or '').lower()}\"")

@@ -19,3 +19,7 @@ PERSONAL_LM = os.path.join(PERSONAL_MODELS, "lm_phrasing.pth")
 # The app bundle's launcher sets LIPFLOW_APP=1: permissions then belong to "Lipflow", not the terminal.
 # On Windows nothing is granted per app, so the name only shows up in messages.
 WHO = "Lipflow" if os.environ.get("LIPFLOW_APP") or WINDOWS else "your terminal"
+
+
+def personal_vsr(language="en"):
+    return PERSONAL_VSR if language == "en" else os.path.join(PERSONAL_MODELS, language, "vsr_face.pth")

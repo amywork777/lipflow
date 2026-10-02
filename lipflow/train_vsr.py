@@ -21,7 +21,7 @@ import torch.nn.functional as F
 
 from .vsr import MODELS, LipReader, _MEAN, _STD
 
-from .paths import PERSONAL_VSR
+from .paths import personal_vsr
 
 
 def _augment(rois: np.ndarray) -> torch.Tensor:
@@ -41,6 +41,13 @@ def _augment(rois: np.ndarray) -> torch.Tensor:
 
 
 def _targets(reader: LipReader, text: str) -> list[int]:
+    if getattr(reader, "language", "en") == "zh":
+        from .text import tokens
+        ids = {t: i for i, t in enumerate(reader.token_list)}
+        chars = tokens(text)
+        if not chars or any(c not in ids for c in chars):
+            raise ValueError("Chinese training text must use the model's Han vocabulary; no digits or Latin letters")
+        return [ids[c] for c in chars]
     from .train_lm import Tok
     if not hasattr(reader, "_tok"):
         reader._tok = Tok(reader.token_list)
@@ -137,6 +144,7 @@ def save(reader: LipReader, scope: str = DEFAULT_SCOPE):
     if scope == "frontend+encoder1":
         prefixes.append("encoder.encoders.0.")
     state = {k: v.detach().cpu() for k, v in reader.model.state_dict().items() if k.startswith(tuple(prefixes))}
-    os.makedirs(os.path.dirname(PERSONAL_VSR), exist_ok=True)
-    torch.save(state, PERSONAL_VSR)
-    return PERSONAL_VSR
+    path = personal_vsr(getattr(reader, "language", "en"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(state, path)
+    return path

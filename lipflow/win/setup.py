@@ -118,8 +118,8 @@ class Setup:
 
     # -- 3. practice ----------------------------------------------------------------------------
     def goPractice(self):
-        done = {c["text"] for c in saved_clips()}
-        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2) if x not in done][:N_SENTENCES]
+        done = {c["text"] for c in saved_clips(self.app.opts.language)}
+        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2, self.app.opts.language) if x not in done][:N_SENTENCES]
         self.i = 0
         self.round_clips = []
         prior = len(done)
@@ -163,7 +163,7 @@ class Setup:
         if not rec_ok:
             self.feedback.configure(fg=AMBER, text=message)
             return
-        self.round_clips.append(save_clip(rois, text, raw))
+        self.round_clips.append(save_clip(rois, text, raw, self.app.opts.language))
         self.feedback.configure(fg=DIM, text=f"Saved. The model read: \"{(raw or '').lower()}\"")
         self.i += 1
         if self.i >= N_SENTENCES:

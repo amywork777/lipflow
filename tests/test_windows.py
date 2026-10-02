@@ -86,6 +86,7 @@ def test_setup_window_pages(tk_root, tmp_path, monkeypatch):
     from lipflow.win.setup import Setup
     camera = types.SimpleNamespace(track_always=False, ensure_open=lambda: None)
     app = types.SimpleNamespace(root=tk_root, key_name="Right Ctrl", camera=camera, onboarding=None,
+                                opts=types.SimpleNamespace(language="en"),
                                 onboarding_text="", reader=None, jobs=queue.Queue(), settings={},
                                 ui=lambda fn, *a, **k: fn(*a, **k),
                                 hud=types.SimpleNamespace(show=lambda *a, **k: None))

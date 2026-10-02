@@ -26,7 +26,10 @@ def test_custom_words_pick_the_guess_and_fix_case():
     c = Cleaner("basic")
     c.personal = Personal("/nonexistent")  # don't depend on the user's imported history
     guesses = ["HELLO MCCALL I AM SENDING YOU A MESSAGE", "HELLO MIGUEL I AM SENDING YOU A MESSAGE"]
-    assert c(guesses, words=["Miguel"]) == "Hello Miguel I am sending you a message."
+    result = c.process(guesses, words=["Miguel"])
+    assert result.needs_review  # changing the recipient must be confirmed, even if in another candidate
+    assert result.proposed == "Hello Miguel I am sending you a message."
+    assert result.text == "Hello mccall I am sending you a message."
     assert c(guesses, words=[]) == "Hello mccall I am sending you a message."
 
 
@@ -59,12 +62,17 @@ def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
 
 def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
-
+    encoded = []
     class R:
-        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt", encoding="utf-8").read().splitlines()] + ["<eos>"]
+        # Inspect the text passed to the tokenizer without requiring a downloaded
+        # English model artifact in an otherwise local normalization test.
+        @staticmethod
+        def _tok(text):
+            encoded.append(text)
+            return [1, 2]
     r = R()
-    unk = r.token_list.index("<unk>")
-    assert unk not in _targets(r, "Hello, Miguel. It's done!")
+    assert _targets(r, "Hello, Miguel. It's done!") == [1, 2]
+    assert encoded == ["HELLO MIGUEL IT'S DONE"]
 
 
 def test_practice_mixes_own_and_harvard(tmp_path, monkeypatch):

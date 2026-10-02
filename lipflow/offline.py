@@ -31,7 +31,30 @@ def load_clip(path: str, tracker: FaceTracker, start: float = 0.0, end: float | 
 
 
 def transcribe_file(path: str, reader: LipReader | None = None, start: float = 0.0,
-                    end: float | None = None, save_rois: str | None = None) -> str:
+                    end: float | None = None, save_rois: str | None = None, mouth_roi=False) -> str:
+    if mouth_roi:
+        cap = cv2.VideoCapture(path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        cap.set(cv2.CAP_PROP_POS_MSEC, start*1000)
+        ts, frames = [], []
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            t = start + len(frames)/fps
+            if end is not None and t > end:
+                break
+            if frame.shape[:2] != (96,96):
+                cap.release()
+                raise ValueError("--mouth-roi expects already aligned 96x96 crops")
+            ts.append(t)
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        cap.release()
+        if not frames:
+            raise ValueError("No frames in selected mouth clip")
+        import numpy as np
+        rois = np.stack([frames[i] for i in LipReader.resample(ts, len(ts))])
+        return (reader or LipReader()).read(rois)[0]
     tracker = FaceTracker()
     ts, grays, anchors = load_clip(path, tracker, start, end)
     tracker.close()

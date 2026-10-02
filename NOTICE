@@ -15,3 +15,50 @@ Lipflow bundles code from these projects:
 
 Model weights (downloaded by setup.sh, not redistributed here) are the Auto-AVSR LRS3 models; the
 LRS3 dataset is licensed for non-commercial research use, so treat the weights the same way.
+
+Optional Mandarin support:
+- scripts/fetch_chinese_lips.py retrieves a deterministic subset of the authors'
+  processed Chinese-LiPS face videos and metadata from the pinned BAAI release:
+  https://huggingface.co/datasets/BAAI/Chinese-LiPS
+  https://arxiv.org/abs/2504.15066
+  The dataset card declares CC-BY-NC-SA-4.0. No dataset videos or reference labels
+  are bundled in this repository. Source attribution and license remain in the
+  downloaded manifests; partial archive retrieval does not verify the whole archive.
+- scripts/train_chinese_adapter.py is a separately written, optional CNVSRC
+  encoder adaptation experiment. Its base weights and resulting partial tensors
+  retain the source research restrictions described below. No automatic product
+  activation or redistribution of source weights is performed.
+- scripts/train_chinese_joint_adapter.py, scripts/compare_chinese_decoders.py,
+  scripts/compare_chinese_reports.py and scripts/analyze_chinese_errors.py extend
+  the separate CNVSRC research entry with train/dev-only adaptation, decoder
+  comparison, frozen paired evaluation and analysis of saved reports. They do not
+  install a model into the GUI. Source weights and derived adaptation tensors retain
+  the author's research/benchmarking restrictions; downloaded Chinese-LiPS material
+  retains CC-BY-NC-SA-4.0. This repository distributes code, protocols and aggregate
+  results, not weights, adapters, videos, per-clip references/manifests or raw predictions.
+  中文：上述工具属于独立的 CNVSRC 研究入口，不会自动将模型安装到 GUI。
+  基座权重与派生适配参数仍受作者研究/基准比较用途限制；下载的 Chinese-LiPS
+  材料保留 CC-BY-NC-SA-4.0。仓库仅提供代码、协议和汇总结果，不上传权重、
+  适配器、视频、逐条参考文本/清单或原始预测。
+- The optional CMLR visual checkpoint and Chinese language model are downloaded from the
+  original author's published model zoo, not bundled or redistributed here:
+  https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages#model-zoo
+  Their source project license restricts use to research/private study and comparative
+  prototypes, excluding commercial product development:
+  https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/blob/master/LICENSE
+  CMLR dataset use is also research-only: https://www.vipazoo.cn/CMLR.html
+  No additional code is copied from that source project by this adaptation.
+- scripts/evaluate_cnvsrc.py is an optional, separately written pure-visual research
+  comparison adapter using the existing Apache-licensed ESPnet modules. It uses
+  verified functional architecture parameters and reads the vocabulary from the author's pinned
+  CNVSRC2025 sources and requires separately downloaded weights; it does not import
+  or redistribute the author's source code, vocabulary files or model weights:
+  https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR
+  https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE
+  https://huggingface.co/ReflectionL/CNVSRC2025Baseline
+  Their research/benchmarking restrictions are not a commercial product license.
+- Optional Chinese quiet-speech inference uses faster-whisper (MIT), CTranslate2 and
+  OpenCC-Python (Apache 2.0), installed as dependencies. Whisper model weights are downloaded
+  separately via faster-whisper; check the selected model card. Default model conversion:
+  https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo
+  This audio backend is not a Mandarin visual/AVSR model.

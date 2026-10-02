@@ -1,0 +1,16 @@
+name: candidate-and-cleanup-guards
+on:
+  push:
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest requests
+      - run: python -m pytest -q tests/test_confidence.py tests/test_guard.py tests/test_evaluation.py tests/test_dataset_fetch.py tests/test_training_preparation.py
+        env:
+          LIPFLOW_HOME: /tmp/lipflow-test-data

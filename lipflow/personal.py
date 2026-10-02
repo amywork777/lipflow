@@ -30,7 +30,8 @@ _WORD = re.compile(r"[a-z0-9']+")
 
 
 def words_of(text: str) -> list[str]:
-    return _WORD.findall(text.lower())
+    from .text import tokens
+    return tokens(text)
 
 
 # -- import ---------------------------------------------------------------------------
