@@ -1,8 +1,7 @@
-"""Lipflow for Windows: a tray icon. Hold a key, mouth the words, let go — the text appears at your cursor.
+"""Lipflow tray app (Windows and Linux).
 
-Threads: tk owns the main thread (overlay, setup window); pynput's hook thread reports the key;
-pystray runs the tray menu on its own thread; one model thread reads lips. Everything that touches
-tk goes through ui(), which queues it for the main thread.
+Same architecture as the Windows build: tk + pystray + pynput. Linux uses wl-copy/wtype (or
+xclip/xdotool on X11) for paste; see lipflow/linux/paste.py.
 """
 from __future__ import annotations
 
@@ -25,10 +24,14 @@ from ..paths import HOME
 from ..vsr import LipReader
 from .hotkey import DEFAULT_KEY, KEYS, PushToTalk
 from .hud import HUD, tray_image
-from .paste import copy_text, paste_text
+
+if sys.platform == "linux":
+    from ..linux.paste import copy_text, paste_text
+else:
+    from .paste import copy_text, paste_text
 
 LOG = os.path.join(HOME, "Lipflow.log")
-CAMERAS = 4  # Windows can't name cameras through OpenCV: offer the first few by number
+CAMERAS = 4
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
@@ -59,7 +62,7 @@ class Lipflow:
         self.reader: LipReader | None = None
         self.cleaner = Cleaner(opts.backend)
         self.jobs: "queue.Queue" = queue.Queue()
-        self.session = 0          # bumps on every start/cancel so stale previews are dropped
+        self.session = 0
         self.preview_busy = False
         self.last_output = ""
         self.last_paste_at = 0.0
@@ -83,9 +86,7 @@ class Lipflow:
     def key_name(self) -> str:
         return key_label(self.opts.key)
 
-    # -- threading -------------------------------------------------------------------------
     def ui(self, fn, *args, **kw):
-        """Run fn on the tk thread (safe from any thread)."""
         self._q.put((fn, args, kw))
 
     def _pump(self):
@@ -101,7 +102,6 @@ class Lipflow:
             pass
         self.root.after(15, self._pump)
 
-    # -- setup -----------------------------------------------------------------------------
     def start(self):
         self.hud = HUD(self.root)
         self._install_key()
@@ -112,7 +112,6 @@ class Lipflow:
         self.root.after(15, self._pump)
 
     def _install_key(self):
-        # The hook thread only queues: all state changes happen on the tk thread.
         self.ptt = PushToTalk(self.opts.key,
                               lambda hands_free: self.ui(self.on_start, hands_free),
                               lambda: self.ui(self.on_stop),
@@ -144,6 +143,14 @@ class Lipflow:
             return Item(key_label(name), lambda icon, item: self.ui(self._pick_key, name),
                         checked=lambda item: self.opts.key == name, radio=True)
 
+        autostart = []
+        if sys.platform == "win32":
+            autostart = [
+                Item("Start with Windows", lambda icon, item: self._toggle_autostart(),
+                     checked=lambda item: self._autostart_enabled()),
+                Menu.SEPARATOR,
+            ]
+
         menu = Menu(
             Item(lambda item: self.state_text, None, enabled=False),
             Item(lambda item: f"Hold {self.key_name} to dictate, double-tap for hands-free", None, enabled=False),
@@ -158,9 +165,7 @@ class Lipflow:
             toggle("whisper", False, then=lambda: self.ui(self._whisper_changed)),
             toggle("use_context"),
             toggle("save_clips"),
-            Item("Start with Windows", lambda icon, item: self._toggle_autostart(),
-                 checked=lambda item: self._autostart_enabled()),
-            Menu.SEPARATOR,
+            *autostart,
             Item("Open history", lambda icon, item: self._notepad(HISTORY)),
             Item("Edit custom words…", lambda icon, item: self._edit_words()),
             Item("Open log", lambda icon, item: self._notepad(LOG)),
@@ -183,7 +188,6 @@ class Lipflow:
         except Exception:
             pass
 
-    # -- menu actions (tk thread unless noted) ---------------------------------------------------
     def _copy_last(self):
         if self.last_output:
             copy_text(self.last_output)
@@ -192,7 +196,7 @@ class Lipflow:
         self.settings["camera"] = value
         save_settings(self.settings)
         self.camera.set_source(value)
-        self.icon.update_menu()  # pystray rebuilt it before this queued change ran
+        self.icon.update_menu()
         print(f"[lipflow] camera: {value}")
 
     def _pick_key(self, name):
@@ -212,7 +216,10 @@ class Lipflow:
     def _notepad(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "a", encoding="utf-8").close()
-        subprocess.Popen(["notepad.exe", path])
+        if sys.platform == "win32":
+            subprocess.Popen(["notepad.exe", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
 
     def _edit_words(self):
         from .. import vocab
@@ -222,11 +229,13 @@ class Lipflow:
     @staticmethod
     def _autostart_command() -> str:
         exe = sys.executable
-        if exe.lower().endswith("python.exe"):  # no console window at login
+        if exe.lower().endswith("python.exe"):
             exe = exe[:-len("python.exe")] + "pythonw.exe"
         return f'"{exe}" -X utf8 -m lipflow'
 
     def _autostart_enabled(self) -> bool:
+        if sys.platform != "win32":
+            return False
         import winreg
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
@@ -235,7 +244,9 @@ class Lipflow:
         except OSError:
             return False
 
-    def _toggle_autostart(self):  # tray thread; registry only
+    def _toggle_autostart(self):
+        if sys.platform != "win32":
+            return
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
             if self._autostart_enabled():
@@ -261,21 +272,19 @@ class Lipflow:
             pass
         self.root.destroy()
 
-    # -- push-to-talk (tk thread) -------------------------------------------------------------
     def on_start(self, hands_free: bool):
         if self.loading:
             self.hud.show("error", "Still loading", "The model is almost ready…", hide_after=1.5)
             return
-        if self.pending_stop is not None:  # pressed again during the tail: finish the last one now
+        if self.pending_stop is not None:
             self._finish_stop(self.pending_stop)
         if hands_free and self.camera.recording is not None:
-            self.hands_free = True  # the second tap of a double-tap: keep the recording going
+            self.hands_free = True
             self.hud.show("listening", "Hands-free · tap to finish", self.hud.body_text)
             return
         self.session += 1
         self.hands_free = hands_free
         from ..context import Context, capture
-        # the app you're typing into is in front right now
         self.ctx = capture() if self.settings.get("use_context", True) else Context()
         rec = self.camera.start_recording()
         if self.whisper_on:
@@ -318,10 +327,7 @@ class Lipflow:
         else:
             self.hud.show("error", "Cancelled", "", hide_after=0.8)
 
-    # -- camera thread ------------------------------------------------------------------------
     def on_frame(self, frame, obs, recording):
-        """At most one video frame waits for the tk thread at a time, so frames never pile up in
-        front of the key handling."""
         rec = self.camera.recording
         if recording and rec is not None and rec.duration > MAX_SECONDS:
             self.ui(self.on_stop)
@@ -342,7 +348,6 @@ class Lipflow:
         finally:
             self._ui_busy = False
 
-    # -- model thread -------------------------------------------------------------------------
     def _preview_loop(self, session: int, rec: Recording):
         if not self.opts.live_preview:
             return
@@ -440,7 +445,7 @@ class Lipflow:
 
     def _final(self, rec: Recording):
         t0 = time.time()
-        ob = self.onboarding  # the setup window can be closed meanwhile on the tk thread
+        ob = self.onboarding
         problem = clip_problem(rec)
         if problem and ob is not None:
             print(f"[lipflow] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
@@ -456,13 +461,12 @@ class Lipflow:
         rois = rois_for(rec)
         enc = self.reader.encode(rois)
         t_enc = time.time() - t0
-        if ob is not None:  # practice clip: keep it with its known text, don't paste
+        if ob is not None:
             raw = self.reader.greedy(enc)
             print(f"[lipflow] practice clip saved ({rec.duration:.1f}s): {raw!r}")
             self.ui(ob.clip_done, True, "", rois, self.onboarding_text, raw)
             self.ui(self.hud.hide)
             return
-        # Whisper mode reads empty when there's no audible whisper (silent mouthing): fall back to lips
         candidates = self._av_candidates(rec, rois)
         if not candidates or not candidates[0]:
             if candidates is not None:
@@ -509,7 +513,6 @@ class Lipflow:
 
 
 def _log_to_file():
-    """pythonw has no console: send prints and tracebacks to %APPDATA%\\Lipflow\\Lipflow.log."""
     os.makedirs(HOME, exist_ok=True)
     try:
         if os.path.getsize(LOG) > 5_000_000:
@@ -525,14 +528,14 @@ def _already_running() -> bool:
     import ctypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.c_void_p
-    _already_running.handle = kernel32.CreateMutexW(None, False, "Local\\LipflowTray")  # held until exit
-    return ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
+    _already_running.handle = kernel32.CreateMutexW(None, False, "Local\\LipflowTray")
+    return ctypes.get_last_error() == 183
 
 
 def run(opts: Options):
     if sys.stdout is None or os.environ.get("LIPFLOW_APP"):
         _log_to_file()
-    if _already_running():
+    if sys.platform == "win32" and _already_running():
         import ctypes
         ctypes.WinDLL("user32").MessageBoxW(None, "Lipflow is already running. Look for the pink mouth icon "
                                                   "in the system tray (you may need to click ^ to see it).",
@@ -541,7 +544,7 @@ def run(opts: Options):
     lf = Lipflow(opts)
     lf.start()
     import signal
-    signal.signal(signal.SIGINT, lambda *a: lf.ui(lf.quit))  # tk would swallow Ctrl-C in its callbacks
+    signal.signal(signal.SIGINT, lambda *a: lf.ui(lf.quit))
     print(f"[lipflow] hold {lf.key_name} and mouth your words · double-tap for hands-free · Esc cancels · Ctrl-C quits")
     lf.root.mainloop()
-    os._exit(0)  # the hook, tray and model threads don't need a clean shutdown
+    os._exit(0)

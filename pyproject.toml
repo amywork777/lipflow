@@ -1,18 +1,18 @@
 [project]
 name = "lipflow"
 version = "0.1.0"
-description = "Wispr Flow, but for your lips: silent dictation from your webcam (macOS and Windows)"
+description = "Wispr Flow, but for your lips: silent dictation from your webcam (macOS, Windows, and Linux)"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "anthropic>=0.40",
     "av>=18.1.0",
     "mediapipe==0.10.21",
-    "mlx-lm>=0.31.3; sys_platform == 'darwin'",  # local cleanup model (Apple Silicon)
+    "mlx-lm>=0.31.3; sys_platform == 'darwin'",
     "numpy<2",
     "opencv-python>=4.9,<4.11",
-    "pillow>=10; sys_platform == 'win32'",  # tray icon and overlay video
+    "pillow>=10; sys_platform == 'win32' or sys_platform == 'linux'",
     "pynput>=1.7.7",
-    "pystray>=0.19; sys_platform == 'win32'",
+    "pystray>=0.19; sys_platform == 'win32' or sys_platform == 'linux'",
     "pyobjc-framework-avfoundation>=10.3; sys_platform == 'darwin'",
     "pyobjc-framework-cocoa>=10.3; sys_platform == 'darwin'",
     "pyobjc-framework-quartz>=10.3; sys_platform == 'darwin'",

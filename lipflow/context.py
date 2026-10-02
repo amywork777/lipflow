@@ -60,6 +60,44 @@ def extract_names(*texts: str, limit: int = 30) -> list[str]:
     return out[:limit]
 
 
+def _capture_linux(ctx: Context) -> Context:
+    """Linux: active window title (Hyprland via hyprctl, X11 via xdotool). No focused-field text."""
+    import json
+    import shutil
+    import subprocess
+
+    if shutil.which("hyprctl"):
+        try:
+            r = subprocess.run(
+                ["hyprctl", "activewindow", "-j"],
+                capture_output=True,
+                text=True,
+                timeout=1,
+                check=False,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                data = json.loads(r.stdout)
+                ctx.title = str(data.get("title") or "")
+                ctx.app = str(data.get("class") or "")
+        except Exception:
+            pass
+    elif shutil.which("xdotool"):
+        try:
+            r = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowname"],
+                capture_output=True,
+                text=True,
+                timeout=1,
+                check=False,
+            )
+            if r.returncode == 0:
+                ctx.title = r.stdout.strip()
+        except Exception:
+            pass
+    ctx.names = extract_names(ctx.title)
+    return ctx
+
+
 def _capture_windows(ctx: Context) -> Context:
     """Windows: the foreground window's title and program name. Text near the cursor would need
     UI Automation, so names come from the title only (e.g. a chat or document name)."""
@@ -93,6 +131,8 @@ def capture(max_chars: int = 600) -> Context:
     try:
         if sys.platform == "win32":
             return _capture_windows(ctx)
+        if sys.platform == "linux":
+            return _capture_linux(ctx)
         from AppKit import NSWorkspace
         from ApplicationServices import AXUIElementCreateApplication
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
