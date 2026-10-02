@@ -1,9 +1,7 @@
-"""Global push-to-talk key on Windows via a pynput low-level keyboard hook. Timing lives in ptt.py.
-
-Windows needs no permission for this. Keystrokes Lipflow injects itself (the Ctrl+V paste) are
-skipped, so they can't be mistaken for a shortcut.
-"""
+"""Global push-to-talk key via pynput. Timing lives in ptt.py."""
 from __future__ import annotations
+
+import sys
 
 from pynput import keyboard
 
@@ -12,17 +10,15 @@ from ..ptt import PushToTalkState
 K = keyboard.Key
 KEYS = {
     "right_control": (K.ctrl_r,),
-    "right_alt": (K.alt_r, K.alt_gr),  # AltGr on many European layouts
+    "right_alt": (K.alt_r, K.alt_gr),
     "left_alt": (K.alt_l,),
     "right_shift": (K.shift_r,),
 }
-# Like macOS, only a non-modifier key turns a held push-to-talk key into a shortcut. AltGr also sends
-# a Left Ctrl of its own, which must not cancel the dictation.
 MODIFIERS = {K.ctrl, K.ctrl_l, K.ctrl_r, K.alt, K.alt_l, K.alt_r, K.alt_gr, K.shift, K.shift_l, K.shift_r,
              K.cmd, K.cmd_l, K.cmd_r}
 DEFAULT_KEY = "right_control"
 LLKHF_INJECTED = 0x10
-MASK_VK = 0xE8  # unassigned: tapping it while Alt is held stops Alt's release from opening app menus
+MASK_VK = 0xE8
 
 
 class PushToTalk(PushToTalkState):
@@ -34,12 +30,12 @@ class PushToTalk(PushToTalkState):
         self._listener = None
 
     def install(self):
-        def filt(msg, data):
-            # Runs before on_press/on_release; returning False hides the event from them only.
-            return not (data.flags & LLKHF_INJECTED)
-
-        self._listener = keyboard.Listener(on_press=self.press, on_release=self.release,
-                                           win32_event_filter=filt)
+        kwargs = {"on_press": self.press, "on_release": self.release}
+        if sys.platform == "win32":
+            def filt(msg, data):
+                return not (data.flags & LLKHF_INJECTED)
+            kwargs["win32_event_filter"] = filt
+        self._listener = keyboard.Listener(**kwargs)
         self._listener.daemon = True
         self._listener.start()
 
@@ -47,7 +43,6 @@ class PushToTalk(PushToTalkState):
         if self._listener is not None:
             self._listener.stop()
 
-    # Called on the listener thread with pynput Key / KeyCode objects.
     def press(self, key):
         if key in self.keys:
             if not self.down and any(k in (K.alt_l, K.alt_r, K.alt_gr) for k in self.keys):

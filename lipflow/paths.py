@@ -6,9 +6,16 @@ import os
 import sys
 
 WINDOWS = sys.platform == "win32"
+LINUX = sys.platform == "linux"
+DESKTOP_TRAY = WINDOWS or LINUX
 
 if WINDOWS:  # %APPDATA%\Lipflow
     _DEFAULT_HOME = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Lipflow")
+elif LINUX:
+    _DEFAULT_HOME = os.path.join(
+        os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+        "Lipflow",
+    )
 else:
     _DEFAULT_HOME = os.path.expanduser("~/Library/Application Support/Lipflow")
 HOME = os.environ.get("LIPFLOW_HOME") or _DEFAULT_HOME
@@ -17,5 +24,4 @@ PERSONAL_VSR = os.path.join(PERSONAL_MODELS, "vsr_face.pth")
 PERSONAL_LM = os.path.join(PERSONAL_MODELS, "lm_phrasing.pth")
 
 # The app bundle's launcher sets LIPFLOW_APP=1: permissions then belong to "Lipflow", not the terminal.
-# On Windows nothing is granted per app, so the name only shows up in messages.
-WHO = "Lipflow" if os.environ.get("LIPFLOW_APP") or WINDOWS else "your terminal"
+WHO = "Lipflow" if os.environ.get("LIPFLOW_APP") or DESKTOP_TRAY else "your terminal"

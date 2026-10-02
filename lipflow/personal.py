@@ -24,6 +24,11 @@ from .paths import HOME as DIR
 PHRASES = os.path.join(DIR, "phrases.txt")
 if sys.platform == "win32":  # Electron keeps its data in %APPDATA%\<app name>
     WISPR_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Wispr Flow")
+elif sys.platform == "linux":
+    WISPR_DIR = os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+        "Wispr Flow",
+    )
 else:
     WISPR_DIR = os.path.expanduser("~/Library/Application Support/Wispr Flow")
 _WORD = re.compile(r"[a-z0-9']+")

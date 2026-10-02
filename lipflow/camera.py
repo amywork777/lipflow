@@ -1,12 +1,4 @@
-"""Webcam capture with live face tracking.
-
-A background thread reads frames. While a recording is active every frame is run
-through FaceTracker and kept (grayscale + timestamp + mouth anchors), so when you stop
-talking the clip is already aligned and only needs the model.
-
-The camera is opened lazily and released after `idle_close` seconds without a
-recording, so the green light isn't on all day.
-"""
+"""Webcam capture with live face tracking."""
 from __future__ import annotations
 
 import os
@@ -18,7 +10,7 @@ import cv2
 import numpy as np
 
 from .face import FaceObs, FaceTracker
-from .paths import WHO, WINDOWS
+from .paths import LINUX, WHO, WINDOWS
 
 
 @dataclass
@@ -30,7 +22,6 @@ class Recording:
     mouth_open: list[float] = field(default_factory=list)
 
     def snapshot(self):
-        # The capture thread appends to these one after another; take a length all three have.
         n = min(len(self.ts), len(self.grays), len(self.anchors))
         return self.ts[:n], self.grays[:n], self.anchors[:n]
 
@@ -44,10 +35,7 @@ class Recording:
 
 
 def list_cameras() -> list[dict]:
-    """Cameras in OpenCV's index order. OpenCV's AVFoundation backend sorts devices by uniqueID,
-    which is *not* macOS's order, so a Continuity Camera iPhone often lands at index 0.
-    On Windows OpenCV can't name cameras, so this is empty and cameras are picked by number."""
-    if WINDOWS:
+    if WINDOWS or LINUX:
         return []
     from AVFoundation import AVCaptureDevice, AVMediaTypeMuxed, AVMediaTypeVideo
     devs = list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeVideo)) + \
@@ -58,8 +46,6 @@ def list_cameras() -> list[dict]:
 
 
 def resolve_camera(pref) -> "int | str":
-    """'auto' → the Mac's own camera (never an iPhone); a name or id → that camera; an int or a
-    video file path passes through."""
     if isinstance(pref, int) or (isinstance(pref, str) and os.path.exists(pref)):
         return pref
     cams = list_cameras()
@@ -81,7 +67,7 @@ class Camera:
                  on_frame=None):
         self.index, self.width, self.height = index, width, height
         self.idle_close = idle_close
-        self.on_frame = on_frame  # (bgr, FaceObs | None, recording: bool) -> None
+        self.on_frame = on_frame
         self._cap = None
         self._thread = None
         self._stop = threading.Event()
@@ -91,9 +77,8 @@ class Camera:
         self._tracker: FaceTracker | None = None
         self.error: str | None = None
         self.ready = threading.Event()
-        self.track_always = False  # onboarding shows the mouth preview even when not recording
+        self.track_always = False
 
-    # -- lifecycle -----------------------------------------------------------------
     def ensure_open(self):
         self._last_used = time.time()
         if self._thread and self._thread.is_alive():
@@ -112,7 +97,6 @@ class Camera:
     def is_open(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
-    # -- recording -----------------------------------------------------------------
     def start_recording(self) -> Recording:
         self.ensure_open()
         with self._lock:
@@ -129,14 +113,12 @@ class Camera:
     def recording(self) -> "Recording | None":
         return self._rec
 
-    # -- thread --------------------------------------------------------------------
     def set_source(self, pref):
-        """Switch camera; takes effect on the next recording."""
         self.index = pref
         self.close()
 
     def _open(self):
-        if isinstance(self.index, str) and os.path.exists(self.index):  # a video file standing in for the webcam (testing / demos)
+        if isinstance(self.index, str) and os.path.exists(self.index):
             cap = cv2.VideoCapture(self.index)
             self._file_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             if not cap.isOpened():
@@ -144,8 +126,12 @@ class Camera:
             return cap
         self._file_fps = None
         idx = resolve_camera(self.index)
-        # DirectShow opens fast and keeps the order Windows lists cameras in; MSMF can take seconds.
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW if WINDOWS else cv2.CAP_AVFOUNDATION)
+        if WINDOWS:
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        elif LINUX:
+            cap = cv2.VideoCapture(idx)
+        else:
+            cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
@@ -153,6 +139,8 @@ class Camera:
             if WINDOWS:
                 raise RuntimeError("Could not open the camera. Turn on Settings → Privacy & security → Camera → "
                                    "Let desktop apps access your camera, and close other apps using it")
+            if LINUX:
+                raise RuntimeError("Could not open the camera. Check PipeWire/v4l2 and close other apps using it")
             raise RuntimeError(f"Could not open the camera. Allow {WHO} in "
                                "Settings → Privacy & Security → Camera")
         return cap
@@ -172,7 +160,7 @@ class Camera:
         try:
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
-                if self._file_fps:  # play the file back in real time
+                if self._file_fps:
                     n_read += 1
                     time.sleep(max(0.0, t0 + n_read / self._file_fps - time.time()))
                 now = time.time()
@@ -180,7 +168,7 @@ class Camera:
                     time.sleep(0.01)
                     continue
                 warm += 1
-                if warm == 3:  # first frames are often black while exposure settles
+                if warm == 3:
                     self.ready.set()
                 rec = self._rec
                 obs: FaceObs | None = None
@@ -196,7 +184,7 @@ class Camera:
                 if self.on_frame is not None:
                     try:
                         self.on_frame(frame, obs, rec is not None)
-                    except Exception as e:  # UI errors must not kill capture
+                    except Exception as e:
                         print(f"[camera] on_frame: {e}")
                 if rec is None and not self.track_always and now - self._last_used > self.idle_close:
                     break
@@ -207,8 +195,6 @@ class Camera:
 
 
 def face_crop(gray: np.ndarray, obs: "FaceObs | None", rec: "Recording") -> tuple:
-    """Keep only the face (with margin) at full resolution, plus its offset: 720p detail without
-    ~1 GB per minute of full frames. Frames without a face reuse the last box."""
     h, w = gray.shape
     if obs is not None:
         x0, y0 = obs.pts.min(0)
@@ -222,7 +208,6 @@ def face_crop(gray: np.ndarray, obs: "FaceObs | None", rec: "Recording") -> tupl
 
 
 def mouth_thumbnail(frame_bgr: np.ndarray, obs: "FaceObs | None", size: int = 112) -> "np.ndarray | None":
-    """A square, mirrored, colour crop around the lips for the HUD."""
     if obs is None:
         return None
     lips = obs.outer_lips
@@ -237,15 +222,11 @@ def mouth_thumbnail(frame_bgr: np.ndarray, obs: "FaceObs | None", size: int = 11
     return cv2.flip(crop, 1)
 
 
-PINK = (115, 92, 250)      # BGR
+PINK = (115, 92, 250)
 PINK_SOFT = (170, 150, 255)
 
 
 def mouth_view(frame_bgr: np.ndarray, obs: "FaceObs | None", w: int = 240, h: int = 150) -> np.ndarray:
-    """Mirrored close-up of the lips with the tracked contour and points drawn on, for the HUD.
-
-    Without a face it shows the whole (dimmed) frame so you can see how to line yourself up.
-    """
     fh, fw = frame_bgr.shape[:2]
     if obs is None:
         view = cv2.resize(frame_bgr, (w, h), interpolation=cv2.INTER_AREA)

@@ -3,7 +3,7 @@
 **Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
 text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
 
-Everything runs locally on your Mac or Windows PC. An optional LLM pass fixes the words lip reading gets wrong.
+Everything runs locally on your Mac, Windows PC, or Linux. An optional LLM pass fixes the words lip reading gets wrong.
 
 ```
  hold ⌥ (right)  ──►  webcam  ──►  face landmarks (live)  ──►  mouth crops, 25 fps
@@ -76,6 +76,42 @@ How it differs from the Mac version:
   around your cursor). Learning from your corrections is Mac-only for now.
 - **Start with Windows:** tray menu → *Start with Windows*. Your data lives in `%APPDATA%\Lipflow`
   (log: `Lipflow.log` there). `uv run lipflow doctor` checks the models and camera.
+
+### Linux
+
+Needs a 64-bit Linux distro with a webcam, Python 3.11–3.12, and about 3 GB of disk (models + PyTorch).
+
+```sh
+git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
+cd ~/code/lipflow
+curl -LsSf https://astral.sh/uv/install.sh | sh   # if you don't have uv yet
+uv sync
+./scripts/download-models.sh                        # ~1.2 GB of models
+uv run lipflow doctor
+uv run lipflow                                      # system tray (pink mouth icon)
+```
+
+The first launch runs the same setup as on Windows (import Wispr phrases if present, ~24 practice
+sentences, optional training on your face). Personal data lives in
+`$XDG_DATA_HOME/Lipflow` (usually `~/.local/share/Lipflow`). Logs: `Lipflow.log` in that folder.
+
+How it differs from the Mac version:
+
+- **Key:** hold **Right Ctrl** by default (tray menu → *Push-to-talk key*: Right Alt / AltGr, Left Alt,
+  or Right Shift). Double-tap for hands-free; Esc cancels.
+- **Paste:** Wayland needs [wtype](https://github.com/atx/wtype) and
+  [wl-clipboard](https://github.com/bugaevc/wl-clipboard); X11 needs `xdotool` and `xclip`. Use
+  `--copy-only` if you only want the clipboard.
+- **Camera:** PipeWire/v4l2 (`/dev/video0`). Pick a camera by number in the tray menu if the default
+  is wrong.
+- **Speed:** encoder runs on CPU unless you install the CUDA build of PyTorch (same as Windows).
+  Training on your face is CPU-only and slower than on Apple Silicon.
+- **Cleanup:** the in-process MLX model is Mac-only. Use Claude (`export ANTHROPIC_API_KEY=…`) or
+  Ollama (`ollama pull qwen3:4b`, then `uv run lipflow --cleanup ollama`) for better accuracy.
+- **Context / corrections:** names come from the active window title (Hyprland: `hyprctl`; X11:
+  `xdotool`). Learning from in-field corrections is Mac-only for now (same as Windows).
+- **Global hotkey:** `pynput` may need permission to read input on Wayland (varies by compositor;
+  being in the `input` group is often enough on wlroots-based sessions).
 
 ### Most accurate: whisper mode
 
