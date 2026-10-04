@@ -21,11 +21,11 @@ jobs:
       - name: Install deps and download models
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2
+          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2 xvfb
           uv sync
           ./scripts/download-models.sh --samples
-      - name: Tests
-        run: uv run pytest -q -rs
+      - name: Tests (pynput needs an X display, so run under a virtual one)
+        run: xvfb-run -a uv run pytest -q -rs
       - name: lipflow doctor (no camera on CI, so this only prints)
         run: uv run lipflow doctor; exit 0
       - name: Lip-read a sample video end to end
