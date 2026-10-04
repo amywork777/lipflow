@@ -163,6 +163,8 @@ def test_backend_is_your_choice(monkeypatch):
 
 def test_on_device_model_needs_apple_silicon(monkeypatch):
     from lipflow import cleanup
+    monkeypatch.setattr(cleanup.sys, "platform", "win32")
+    assert cleanup.unavailable("local") == "Mac only"
     monkeypatch.setattr(cleanup.sys, "platform", "darwin")
     monkeypatch.setattr(cleanup.platform, "machine", lambda: "x86_64")
     assert cleanup.unavailable("local") == "Apple Silicon only"

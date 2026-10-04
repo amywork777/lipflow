@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import sys
 
@@ -30,9 +31,8 @@ def doctor() -> int:
         line(os.path.exists(path) and os.path.getsize(path) > size, f"model file {rel}", fix_models)
 
     import torch
-    from .vsr import apple_gpu
     dev = "cuda (NVIDIA GPU)" if torch.cuda.is_available() else \
-        "mps (Apple GPU)" if apple_gpu() else "cpu"
+        "mps (Apple GPU)" if torch.backends.mps.is_available() and platform.machine() == "arm64" else "cpu"
     line(True, f"torch {torch.__version__}, encoder on {dev}")
 
     if sys.platform == "win32":

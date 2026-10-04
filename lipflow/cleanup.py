@@ -183,7 +183,9 @@ def unavailable(backend: str) -> "str | None":
         return "set ANTHROPIC_API_KEY"
     if backend == "codex" and not shutil.which("codex"):
         return "install the Codex CLI"
-    if backend == "local" and not (sys.platform == "darwin" and platform.machine() == "arm64"):
+    if backend == "local" and sys.platform != "darwin":
+        return "Mac only"
+    if backend == "local" and platform.machine() != "arm64":
         return "Apple Silicon only"
     return None
 
