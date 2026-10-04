@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import plistlib
 import shutil
 import subprocess
@@ -119,7 +120,7 @@ def _compile_launcher(dest: str) -> None:
     if not os.path.isdir(site):
         raise SystemExit(f"no venv site-packages at {site}; run ./setup.sh first")
     subprocess.run([
-        "clang", "-O2", "-arch", "arm64",
+        "clang", "-O2", "-arch", platform.machine(),  # match the venv's libpython
         f"-I{include}",
         f"-DLIPFLOW_ROOT={root_c(ROOT)}",
         f"-DLIPFLOW_PYHOME={root_c(pyhome)}",

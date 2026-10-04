@@ -17,8 +17,8 @@ else
   ./scripts/download-models.sh
 fi
 
-# The small on-device cleanup model (~350 MB), so the first launch doesn't stall on it
-uv run python -c "from mlx_lm import load; load('mlx-community/Qwen3-0.6B-4bit')" >/dev/null 2>&1 && echo "✓ cleanup model"
+# The small on-device cleanup model (~350 MB, Apple Silicon only), so the first launch doesn't stall on it
+[[ "$(uname -m)" == arm64 ]] && uv run python -c "from mlx_lm import load; load('mlx-community/Qwen3-0.6B-4bit')" >/dev/null 2>&1 && echo "✓ cleanup model"
 
 # The app bundle: its own permissions, Spotlight/Launchpad, Login Items
 if [[ "${1:-}" != "--no-app" ]]; then

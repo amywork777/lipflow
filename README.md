@@ -15,7 +15,8 @@ Everything runs locally on your Mac, Windows PC, or Linux. An optional LLM pass 
 
 ## Setup
 
-Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
+Needs a Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
+Intel Macs work too, with [a few differences](#intel-macs).
 
 ```sh
 git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
@@ -43,6 +44,16 @@ Everything personal (clips, phrases, trained models) lives in
 To start Lipflow at login: System Settings → General → Login Items → add Lipflow. Logs are in
 `~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
 macOS asks for permissions in the terminal's name.
+
+### Intel Macs
+
+Same setup. Differences from Apple Silicon:
+
+- **Speed:** the encoder runs on the CPU (PyTorch's Apple GPU backend is unreliable on Intel Macs'
+  AMD GPUs), so expect a few seconds from release to text. Training on your face is slower too.
+- **PyTorch 2.2.2:** the last release with Intel Mac builds. `uv sync` picks it for you.
+- **Cleanup:** the on-device model needs Apple Silicon. Use Claude, ChatGPT (Codex CLI), or Ollama
+  for better accuracy (see [LLM cleanup](#better-accuracy-turn-on-llm-cleanup)).
 
 ### Windows
 
@@ -138,7 +149,7 @@ model output reads like "WALLET OFFICER" when you said "while in office". Lipflo
 top-3 guesses plus your last few dictations to an LLM, which picks the sentence you meant and
 fixes casing, punctuation and numbers. You choose which one under **Cleanup** in the menu bar (tray
 on Windows), or with `--cleanup <name>` for one run. **Automatic**, the default, uses Claude if you've
-set a key, otherwise the on-device model, otherwise the offline rules.
+set a key, otherwise the on-device model (Apple Silicon), otherwise Ollama if it's running, otherwise the offline rules.
 
 1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
    `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
