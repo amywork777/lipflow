@@ -132,7 +132,10 @@ def fix_case(text: str) -> str:
 
 
 def _norm_words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", numbers_to_digits(text.lower()))
+    # numbers_to_digits leaves "one".."nine" as words, but models are told to write digits, so
+    # compare those as digits too: "four thirty" and "4:30" are the same words.
+    words = re.findall(r"[a-z0-9']+", numbers_to_digits(text.lower()))
+    return [str(_NUM[w]) if w in _NUM else w for w in words]
 
 
 def _edits(a: list[str], b: list[str]) -> int:
