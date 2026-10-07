@@ -1,0 +1,31 @@
+{
+  "$schema": "https://api.capy.ai/schemas/setup.v1.json",
+  "format_version": 1,
+  "scripts": {
+    "initialize": "bash .capy/setup.sh initialize",
+    "refresh": "bash .capy/setup.sh refresh"
+  },
+  "timeouts": {
+    "initialize": 900,
+    "refresh": 300
+  },
+  "startup": [],
+  "commands": [
+    {
+      "name": "Tests",
+      "command": "timeout 900 xvfb-run -a uv run --frozen pytest -q -rs"
+    },
+    {
+      "name": "Sample transcription",
+      "command": "timeout 300 xvfb-run -a uv run --frozen lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic"
+    },
+    {
+      "name": "Doctor",
+      "command": "timeout 60 xvfb-run -a uv run --frozen lipflow doctor"
+    },
+    {
+      "name": "Launch desktop app",
+      "command": "uv run --frozen lipflow"
+    }
+  ]
+}
