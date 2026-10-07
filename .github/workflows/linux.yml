@@ -21,16 +21,13 @@ jobs:
       - name: Install deps and download models
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2 xvfb
+          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2 libportaudio2 xclip xdotool xvfb xauth
           uv sync
           ./scripts/download-models.sh --samples
-      - name: Virtual X display (pynput picks its X backend at import)
-        run: |
-          Xvfb :99 &
-          echo "DISPLAY=:99" >> "$GITHUB_ENV"
       - name: Tests
-        run: uv run pytest -q -rs
+        run: xvfb-run -a uv run pytest -q -rs
       - name: lipflow doctor (no camera on CI, so this only prints)
-        run: uv run lipflow doctor || true
+        continue-on-error: true
+        run: xvfb-run -a uv run lipflow doctor
       - name: Lip-read a sample video end to end
-        run: uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic
+        run: xvfb-run -a uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic
