@@ -141,6 +141,9 @@ class LipReader:
 
     @torch.inference_mode()
     def beam_search(self, enc: torch.Tensor, nbest: int = 1) -> "str | list[str]":
+        for module in self.beam.full_scorers["decoder"].modules():
+            if hasattr(module, "_mem_kv"):
+                del module._mem_kv
         hyps = self.beam(enc)
         texts = []
         for h in hyps[:max(nbest, 1)]:
