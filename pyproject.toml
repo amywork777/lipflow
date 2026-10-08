@@ -8,7 +8,7 @@ dependencies = [
     "av>=18.1.0",
     "evdev-binary>=1.7; sys_platform == 'linux'",  # Wayland hotkey; wheels, unlike evdev which needs kernel headers
     "mediapipe==0.10.21",
-    "mlx-lm>=0.31.3; sys_platform == 'darwin'",  # local cleanup model (Apple Silicon)
+    "mlx-lm>=0.31.3; sys_platform == 'darwin' and platform_machine == 'arm64'",  # local cleanup model (Apple Silicon)
     "numpy<2",
     "opencv-python>=4.9,<4.11",
     "pillow>=10; sys_platform == 'win32' or sys_platform == 'linux'",  # tray icon and overlay video
@@ -20,7 +20,8 @@ dependencies = [
     "requests>=2.31",
     "sentencepiece>=0.2.2",
     "sounddevice>=0.5.6",
-    "torch>=2.4",
+    "torch>=2.4; sys_platform != 'darwin' or platform_machine == 'arm64'",
+    "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",  # last release with Intel Mac wheels
 ]
 
 [project.scripts]
@@ -40,10 +41,17 @@ dev = [
 
 # pynput asks for the source-only `evdev` package. `evdev-binary` is the same module as a wheel.
 [tool.uv]
+# Lock only versions with wheels for every platform we ship, so Intel Macs don't silently break.
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 dependency-metadata = [
     { name = "pynput", requires-dist = [
-        "evdev-binary>=1.7; 'linux' in sys_platform",
-        "python-xlib; 'linux' in sys_platform",
+        "evdev-binary>=1.7; sys_platform == 'linux'",
+        "python-xlib; sys_platform == 'linux'",
         "six",
         "pyobjc-framework-applicationservices; sys_platform == 'darwin'",
         "pyobjc-framework-quartz; sys_platform == 'darwin'",

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -184,6 +185,8 @@ def unavailable(backend: str) -> "str | None":
         return "install the Codex CLI"
     if backend == "local" and sys.platform != "darwin":
         return "Mac only"
+    if backend == "local" and platform.machine() != "arm64":
+        return "Apple Silicon only"
     return None
 
 
