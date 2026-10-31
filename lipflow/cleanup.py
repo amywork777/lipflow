@@ -176,11 +176,23 @@ CHOICES = {"auto": "Automatic", "claude": "Claude", "codex": "ChatGPT (Codex CLI
            "ollama": "Ollama", "basic": "Basic rules only"}
 
 
+def _cli_search_path() -> str:
+    """Finder launches apps without the shell's Homebrew/user executable directories."""
+    paths = os.environ.get("PATH", os.defpath).split(os.pathsep)
+    paths += [os.path.expanduser(p) for p in
+              ("~/.local/bin", "~/.volta/bin", "~/.npm-global/bin", "/opt/homebrew/bin", "/usr/local/bin")]
+    return os.pathsep.join(dict.fromkeys(paths))
+
+
+def codex_executable() -> "str | None":
+    return shutil.which("codex", path=_cli_search_path())
+
+
 def unavailable(backend: str) -> "str | None":
     """Why this backend can't be used right now, or None. Cheap: runs when the menu is built."""
     if backend == "claude" and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         return "set ANTHROPIC_API_KEY"
-    if backend == "codex" and not shutil.which("codex"):
+    if backend == "codex" and not codex_executable():
         return "install the Codex CLI"
     if backend == "local" and sys.platform != "darwin":
         return "Mac only"
@@ -312,11 +324,17 @@ class Cleaner:
         prompt = f"{SYSTEM}\n\n{_user_prompt(candidates, context, self._words, self._similar)}"
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "reply.txt")
-            args = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+            executable = codex_executable()
+            if executable is None:
+                raise RuntimeError("install the Codex CLI")
+            args = [executable, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
                     "-c", 'model_reasoning_effort="low"', "-o", out]
             if self.model:
                 args += ["-m", self.model]
-            r = subprocess.run(args + ["-"], input=prompt, capture_output=True, text=True, timeout=20, cwd=tmp)
+            # npm's Codex launcher uses /usr/bin/env node, which needs this path too.
+            env = dict(os.environ, PATH=_cli_search_path())
+            r = subprocess.run(args + ["-"], input=prompt, capture_output=True, text=True, timeout=20, cwd=tmp,
+                               env=env)
             if r.returncode != 0:
                 raise RuntimeError(f"codex exited {r.returncode}: {r.stderr.strip()[-200:]}")
             text = open(out, encoding="utf-8").read().strip() if os.path.exists(out) else ""
