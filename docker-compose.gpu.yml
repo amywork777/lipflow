@@ -1,0 +1,20 @@
+# Optional GPU override for machines with NVIDIA GPU and nvidia-container-toolkit installed.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up lipflow-gui
+services:
+  lipflow-gui:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  lipflow-cli:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

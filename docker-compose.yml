@@ -1,0 +1,57 @@
+services:
+  # Interactive GUI desktop service (Tray, HUD overlay, webcam)
+  lipflow-gui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: lipflow:latest
+    container_name: lipflow-gui
+    user: "${UID:-1000}:${GID:-1000}"
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=unix:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/${WAYLAND_DISPLAY:-wayland-0}:${XDG_RUNTIME_DIR:-/run/user/1000}/${WAYLAND_DISPLAY:-wayland-0}:ro
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native:${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native:ro
+      - ./models:/app/models
+      - ${HOME}/.local/share/Lipflow:/home/lipflow/.local/share/Lipflow
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/snd:/dev/snd
+      - /dev/dri:/dev/dri
+    command: ["run"]
+
+  # Offline / Batch / CLI service (e.g. transcribing video files, running doctor or tests)
+  lipflow-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: lipflow:latest
+    container_name: lipflow-cli
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - ./models:/app/models
+      - ./samples:/samples:ro
+      - ${HOME}/.local/share/Lipflow:/home/lipflow/.local/share/Lipflow
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/dri:/dev/dri
+    command: ["doctor"]
