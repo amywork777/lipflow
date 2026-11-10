@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 
+import numpy  # noqa: F401  (see capture: native imports must precede the stdin watcher)
+
 RATE = 16000
 STOP_TIMEOUT = 1.0
 
@@ -29,6 +31,12 @@ def _builtin(sd):
 
 
 def capture(device=None):
+    # On Windows, loading a native DLL (numpy, PortAudio) deadlocks while another thread
+    # has a blocking read pending on the stdin pipe, so import before starting the watcher.
+    try:
+        import sounddevice as sd
+    except Exception as exc:
+        sd, import_error = None, exc
     stop, closed = threading.Event(), threading.Event()
 
     def watch_parent():
@@ -52,7 +60,8 @@ def capture(device=None):
         sys.stdout.buffer.flush()
 
     try:
-        import sounddevice as sd
+        if sd is None:
+            raise import_error
         if stop.is_set():
             return
         if device is None:
