@@ -97,6 +97,9 @@ def _glass(frame, radius: float, scrim: float = 0.8):
         g = Glass.alloc().initWithFrame_(frame)
         g.setStyle_(0)  # NSGlassEffectViewStyleRegular
         g.setCornerRadius_(radius)
+        g.setWantsLayer_(True)
+        g.layer().setCornerRadius_(radius)
+        g.layer().setMasksToBounds_(True)
         g.setTintColor_(_rgb((0.05, 0.05, 0.08), 0.5))
         g.setContentView_(content)
         return g, content
@@ -104,6 +107,17 @@ def _glass(frame, radius: float, scrim: float = 0.8):
     v.setMaterial_(HUD_MATERIAL)
     v.setBlendingMode_(BEHIND_WINDOW)
     v.setState_(ACTIVE)
+    # Behind-window blur is composited separately by WindowServer. A layer's
+    # cornerRadius clips our content, but the effect needs its own alpha mask.
+    mask = NSImage.alloc().initWithSize_(frame.size)
+    mask.lockFocus()
+    try:
+        NSColor.whiteColor().setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0, 0, frame.size.width, frame.size.height), radius, radius).fill()
+    finally:
+        mask.unlockFocus()
+    v.setMaskImage_(mask)
     v.setWantsLayer_(True)
     v.layer().setCornerRadius_(radius)
     v.layer().setMasksToBounds_(True)
