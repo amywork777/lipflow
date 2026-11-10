@@ -42,6 +42,16 @@ def test_small_model_may_not_invent_words():
     assert fix_case("hello miguel i'm here") == "Hello miguel I'm here"
 
 
+def test_small_model_may_write_numbers_as_digits():
+    from lipflow.cleanup import within_guesses
+    # The prompt asks for digits ("four thirty" -> "4:30"); that is formatting, not a new word.
+    guesses = ["HI PRIYA CAN WE MEET AT FOUR THIRTY"]
+    assert within_guesses("Hi Priya, can we meet at 4:30?", guesses, strict=True)
+    assert within_guesses("Hi Priya, can we meet at 4:30?", guesses, strict=False, max_edits=1)
+    assert within_guesses("I have 3 kids.", ["I HAVE THREE KIDS"], strict=True)
+    assert not within_guesses("I have 5 kids.", ["I HAVE THREE KIDS"], strict=True)
+
+
 def test_vocab_edit_guard():
     from lipflow.cleanup import within_guesses
     guesses = ["HELLO MIGUEL I AM SENDING YOU A MESSAGE WITH MY NEW", "HELLO MIGUEL I AM SENDING YOU A MESSAGE WITH MY NEWS"]
