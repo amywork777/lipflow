@@ -61,11 +61,31 @@ def main(argv=None):
     w = sub.add_parser("import-wispr", help="learn your phrasing from your Wispr Flow history (stays local)")
     w.add_argument("--from-text", help="import a plain-text file of your writing instead (one phrase per line)")
 
+    # IPC triggers for Linux Wayland/X11 shortcuts
+    sub.add_parser("trigger-toggle", help="toggle recording (hands-free start / stop on Linux)")
+    sub.add_parser("trigger-start", help="start recording (push-to-talk press on Linux)")
+    sub.add_parser("trigger-stop", help="stop recording (push-to-talk release on Linux)")
+    sub.add_parser("trigger-cancel", help="cancel recording on Linux")
+    trig = sub.add_parser("trigger", help="send trigger action to running Lipflow (Linux)")
+    trig.add_argument("action", choices=["toggle", "start", "stop", "cancel"])
+
+    TRIGGERS = {"trigger-toggle", "trigger-start", "trigger-stop", "trigger-cancel", "trigger"}
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] not in {"run", "file", "doctor", "import-wispr", "onboard", "train-lm", "-h", "--help"}:
+    if not argv or argv[0] not in ({"run", "file", "doctor", "import-wispr", "onboard", "train-lm", "-h", "--help"} | TRIGGERS):
         argv.insert(0, "run")
     args = p.parse_args(argv)
     cmd = args.cmd
+
+    if cmd in TRIGGERS:
+        if sys.platform != "linux":
+            print(f"Error: {cmd} is only supported on Linux", file=sys.stderr)
+            sys.exit(1)
+        action = args.action if cmd == "trigger" else cmd.split("-", 1)[1]
+        from .linux.ipc import send_trigger
+        if not send_trigger(action):
+            print(f"Error: could not send '{action}' to running Lipflow (is 'lipflow run' active?)", file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
 
     if cmd == "file":
         from .offline import transcribe_file

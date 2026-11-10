@@ -174,3 +174,80 @@ def test_sway_title_when_hyprctl_missing(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     ctx = _capture_linux(Context())
     assert ctx.title == "Alacritty" and ctx.app == "Alacritty"
+
+
+def test_ipc_socket_path_xdg_runtime(monkeypatch, tmp_path):
+    from lipflow.linux import ipc
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    assert ipc.socket_path() == str(tmp_path / "lipflow.sock")
+
+
+def test_ipc_server_permissions_and_communication(monkeypatch, tmp_path):
+    import os
+    import stat
+    import time
+    from lipflow.linux.ipc import IPCServer, send_trigger
+
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+
+    events = []
+    server = IPCServer(
+        on_start=lambda: events.append("start"),
+        on_stop=lambda: events.append("stop"),
+        on_toggle=lambda: events.append("toggle"),
+        on_cancel=lambda: events.append("cancel"),
+    )
+    assert server.start()
+    try:
+        sock_path = server.sock_path
+        assert os.path.exists(sock_path)
+        # Check permissions 0600 (read/write for owner only)
+        mode = stat.S_IMODE(os.stat(sock_path).st_mode)
+        assert mode == 0o600
+
+        assert send_trigger("start")
+        time.sleep(0.05)
+        assert send_trigger("stop")
+        time.sleep(0.05)
+        assert send_trigger("toggle")
+        time.sleep(0.05)
+        assert send_trigger("cancel")
+        time.sleep(0.05)
+
+        assert events == ["start", "stop", "toggle", "cancel"]
+    finally:
+        server.stop()
+        assert not os.path.exists(server.sock_path)
+
+
+def test_ipc_send_trigger_when_no_server(monkeypatch, tmp_path):
+    from lipflow.linux.ipc import send_trigger
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    assert not send_trigger("toggle")
+
+
+def test_push_to_talk_toggle():
+    from lipflow.win.hotkey import PushToTalk
+    events = []
+    ptt = PushToTalk(
+        key="right_control",
+        on_start=lambda hands_free=False: events.append(("start", hands_free)),
+        on_stop=lambda: events.append("stop"),
+        on_cancel=lambda silent=False: events.append("cancel"),
+    )
+
+    # First toggle -> starts hands-free
+    ptt.toggle()
+    assert ptt.active and ptt.hands_free
+    assert events == [("start", True)]
+
+    # Debounce: rapid second toggle within 0.35s is ignored
+    ptt.toggle()
+    assert len(events) == 1
+
+    # Force time advance past debounce
+    ptt._last_toggle -= 0.5
+    ptt.toggle()
+    assert not ptt.active and not ptt.hands_free
+    assert events == [("start", True), "stop"]
+

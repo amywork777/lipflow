@@ -125,8 +125,13 @@ How it differs from the Mac version:
 - **Context / corrections:** names come from the active window title (Hyprland: `hyprctl`; Sway:
   `swaymsg`; KDE: `kdotool`; X11: `xdotool`). GNOME has no stable title API. Learning from
   in-field corrections is Mac-only for now (same as Windows).
-- **Global hotkey:** on Wayland Lipflow reads the keyboard from `/dev/input`, so your user needs
-  to be in the `input` group (log in again after adding it). X11 uses the same hook as Windows.
+- **Global hotkey & Wayland triggers:** on Wayland Lipflow can read the keyboard from `/dev/input`
+  if your user is in the `input` group. Alternatively, on compositors where you prefer system shortcuts
+  (KDE Plasma, GNOME, Hyprland, Sway), bind any shortcut key in your desktop settings to:
+  - `lipflow trigger-toggle`: toggle recording (press once to start hands-free, press again to stop and type; Esc cancels).
+  - `lipflow trigger-start` / `lipflow trigger-stop`: push-to-talk key down / key up.
+  - `lipflow trigger-cancel`: cancel current dictation.
+  X11 uses the standard key hook as on Windows.
 
 ### Most accurate: whisper mode
 

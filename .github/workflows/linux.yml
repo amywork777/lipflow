@@ -27,6 +27,7 @@ jobs:
       - name: Tests
         run: uv run pytest -q -rs
       - name: lipflow doctor (no camera on CI, so this only prints)
-        run: uv run lipflow doctor; exit 0
+        continue-on-error: true
+        run: uv run lipflow doctor || true
       - name: Lip-read a sample video end to end
         run: uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic

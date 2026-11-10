@@ -1,5 +1,10 @@
 """Push-to-talk timing (shared by macOS and Windows) and the Windows key mapping. Runs everywhere."""
-from pynput.keyboard import Key, KeyCode
+import pytest
+
+try:
+    from pynput.keyboard import Key, KeyCode
+except Exception:
+    Key = KeyCode = None
 
 from lipflow.ptt import DOUBLE_TAP, TAP_MAX, PushToTalkState
 
@@ -65,6 +70,7 @@ def test_escape_cancels_hands_free():
     assert log[-1] == ("cancel", False) and not ptt.hands_free
 
 
+@pytest.mark.skipif(Key is None, reason="No display server for pynput")
 def test_windows_keys_map_through_pynput(monkeypatch):
     from lipflow.win.hotkey import KEYS, PushToTalk
     assert Key.ctrl_r in KEYS["right_control"] and Key.alt_gr in KEYS["right_alt"]
@@ -80,6 +86,7 @@ def test_windows_keys_map_through_pynput(monkeypatch):
     assert log == [("start", False), ("cancel", False)]
 
 
+@pytest.mark.skipif(Key is None, reason="No display server for pynput")
 def test_windows_altgr_fake_ctrl_does_not_cancel(monkeypatch):
     from lipflow.win.hotkey import PushToTalk
     monkeypatch.setattr(PushToTalk, "_mask_alt", staticmethod(lambda: None))  # would inject a real key
