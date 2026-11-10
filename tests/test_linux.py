@@ -277,3 +277,57 @@ def test_push_to_talk_toggle():
     assert not ptt.active and not ptt.hands_free
     assert events == [("start", True), "stop"]
 
+
+def test_linux_cameras_discovered_from_sysfs(tmp_path, monkeypatch):
+    from lipflow.camera import _list_linux_cameras, list_cameras
+
+    # Create mock sysfs tree
+    v0 = tmp_path / "video0"
+    v0.mkdir()
+    (v0 / "name").write_text("Integrated Camera: Integrated C\n", encoding="utf-8")
+
+    v1 = tmp_path / "video1"
+    v1.mkdir()
+    (v1 / "name").write_text("Integrated Camera: Integrated C\n", encoding="utf-8")
+
+    v2 = tmp_path / "video2"
+    v2.mkdir()
+    (v2 / "name").write_text("USB Webcam: Metadata\n", encoding="utf-8")
+
+    v3 = tmp_path / "video3"
+    v3.mkdir()
+    (v3 / "name").write_text("External USB Camera\n", encoding="utf-8")
+
+    # Mock capture capability check: 0 and 3 are capture, 1 is meta, 2 is meta
+    def mock_is_capture(idx):
+        return idx in (0, 3)
+
+    from lipflow import camera
+    monkeypatch.setattr(camera, "_is_v4l2_capture_device", mock_is_capture)
+
+    cams = _list_linux_cameras(sysfs_dir=str(tmp_path))
+    assert len(cams) == 2
+    assert cams[0] == {"index": 0, "name": "Integrated Camera: Integrated C", "id": "0", "builtin": True}
+    assert cams[1] == {"index": 3, "name": "External USB Camera", "id": "3", "builtin": False}
+
+
+def test_resolve_camera_linux(monkeypatch):
+    from lipflow.camera import resolve_camera
+    mock_cams = [
+        {"index": 0, "name": "Integrated Camera", "id": "0", "builtin": True},
+        {"index": 3, "name": "External USB Camera", "id": "3", "builtin": False},
+    ]
+    from lipflow import camera
+    monkeypatch.setattr(camera, "list_cameras", lambda: mock_cams)
+
+    assert resolve_camera("auto") == 0
+    assert resolve_camera("External") == 3
+    assert resolve_camera("3") == 3
+    assert resolve_camera(2) == 2  # integer passes directly
+    assert resolve_camera("unknown") == 0  # non-matching pref falls back to builtin
+
+
+def test_linux_cameras_empty_when_no_sysfs(tmp_path):
+    from lipflow.camera import _list_linux_cameras
+    assert _list_linux_cameras(sysfs_dir=str(tmp_path / "nonexistent")) == []
+

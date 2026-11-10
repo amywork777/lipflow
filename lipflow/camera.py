@@ -43,18 +43,73 @@ class Recording:
         return self.ts[-1] - self.ts[0] if len(self.ts) > 1 else 0.0
 
 
+def _is_v4l2_capture_device(idx: int) -> bool:
+    dev = f"/dev/video{idx}"
+    if not os.path.exists(dev):
+        return True
+    try:
+        import fcntl, struct
+        fd = os.open(dev, os.O_RDWR | os.O_NONBLOCK)
+        try:
+            buf = bytearray(104)
+            fcntl.ioctl(fd, 0x80685600, buf)  # VIDIOC_QUERYCAP
+            _, _, _, _, caps, device_caps = struct.unpack("16s32s32sIII", buf[:92])
+            actual = device_caps if (caps & 0x80000000) else caps
+            return bool(actual & 0x00001001)  # V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_CAPTURE_MPLANE
+        finally:
+            os.close(fd)
+    except Exception:
+        return True
+
+
+def _list_linux_cameras(sysfs_dir: str = "/sys/class/video4linux") -> list[dict]:
+    import glob
+    if not os.path.isdir(sysfs_dir):
+        return []
+    cams = []
+    for p in sorted(glob.glob(os.path.join(sysfs_dir, "video*")),
+                    key=lambda x: int(os.path.basename(x).replace("video", ""))
+                    if os.path.basename(x).replace("video", "").isdigit() else 999):
+        try:
+            base = os.path.basename(p).replace("video", "")
+            if not base.isdigit():
+                continue
+            idx = int(base)
+            name_file = os.path.join(p, "name")
+            if os.path.exists(name_file):
+                with open(name_file, encoding="utf-8", errors="replace") as f:
+                    name = f.read().strip()
+            else:
+                name = f"Camera {idx}"
+            if "metadata" in name.lower():
+                continue
+            if not _is_v4l2_capture_device(idx):
+                continue
+            builtin = any(k in name.lower() for k in ("integrated", "built-in", "internal"))
+            cams.append({"index": idx, "name": name, "id": str(idx), "builtin": builtin})
+        except Exception:
+            continue
+    return cams
+
+
 def list_cameras() -> list[dict]:
     """Cameras in OpenCV's index order. OpenCV's AVFoundation backend sorts devices by uniqueID,
     which is *not* macOS's order, so a Continuity Camera iPhone often lands at index 0.
-    On Windows OpenCV can't name cameras, so this is empty and cameras are picked by number."""
-    if WINDOWS or LINUX:
+    On Windows OpenCV can't name cameras, so this is empty and cameras are picked by number.
+    On Linux, inspect /sys/class/video4linux."""
+    if WINDOWS:
         return []
-    from AVFoundation import AVCaptureDevice, AVMediaTypeMuxed, AVMediaTypeVideo
-    devs = list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeVideo)) + \
-        list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeMuxed))
-    devs.sort(key=lambda d: d.uniqueID())
-    return [{"index": i, "name": str(d.localizedName()), "id": str(d.uniqueID()),
-             "builtin": "BuiltIn" in str(d.deviceType())} for i, d in enumerate(devs)]
+    if LINUX:
+        return _list_linux_cameras()
+    try:
+        from AVFoundation import AVCaptureDevice, AVMediaTypeMuxed, AVMediaTypeVideo
+        devs = list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeVideo)) + \
+            list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeMuxed))
+        devs.sort(key=lambda d: d.uniqueID())
+        return [{"index": i, "name": str(d.localizedName()), "id": str(d.uniqueID()),
+                 "builtin": "BuiltIn" in str(d.deviceType())} for i, d in enumerate(devs)]
+    except Exception:
+        return []
 
 
 def resolve_camera(pref) -> "int | str":

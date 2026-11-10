@@ -100,11 +100,14 @@ def _linux_checks(line):
          "clipboard read (optional, for restore)", "same as above")
 
     import cv2
-    from .camera import resolve_camera
+    from .camera import list_cameras, resolve_camera
     from .dictation import load_settings
-    idx = resolve_camera(load_settings().get("camera", "auto"))
+    cam_pref = load_settings().get("camera", "auto")
+    idx = resolve_camera(cam_pref)
+    cams = {c["index"]: c["name"] for c in list_cameras()}
+    cam_desc = f"Camera {idx} ({cams[idx]})" if idx in cams else f"Camera {idx}"
     cap = cv2.VideoCapture(idx)
     ok = cap.isOpened() and cap.read()[0]
     cap.release()
-    line(ok, f"Camera {idx} opens and sends frames",
+    line(ok, f"{cam_desc} opens and sends frames",
          "check PipeWire/v4l2, close other apps using the camera, try --camera 0")

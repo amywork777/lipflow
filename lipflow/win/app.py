@@ -147,6 +147,26 @@ class Lipflow:
                         lambda icon, item: self.ui(self._pick_camera, value),
                         checked=lambda item: self.settings.get("camera", "auto") == value, radio=True)
 
+        from ..camera import list_cameras
+        cams = list_cameras()
+        if cams:
+            def pick_cam(c):
+                name = c["name"]
+                idx = c["index"]
+                label = f"{name} ({idx})" if any(o["name"] == name and o["index"] != idx for o in cams) else name
+                return Item(label,
+                            lambda icon, item, v=idx: self.ui(self._pick_camera, v),
+                            checked=lambda item, v=idx: self.settings.get("camera", "auto") == v, radio=True)
+
+            cam_menu = Menu(
+                Item("Automatic", lambda icon, item: self.ui(self._pick_camera, "auto"),
+                     checked=lambda item: self.settings.get("camera", "auto") == "auto", radio=True),
+                Menu.SEPARATOR,
+                *[pick_cam(c) for c in cams],
+            )
+        else:
+            cam_menu = Menu(*[pick_camera(v) for v in ["auto", *range(CAMERAS)]])
+
         def pick_cleanup(name):
             why = unavailable(name)
             return Item(CHOICES[name] + (f" ({why})" if why else ""),
@@ -174,7 +194,7 @@ class Lipflow:
             Item("Practice && train more…", lambda icon, item: self.ui(self.show_setup, "practice")),
             Item("Run setup again…", lambda icon, item: self.ui(self.show_setup)),
             Menu.SEPARATOR,
-            Item("Camera", Menu(*[pick_camera(v) for v in ["auto", *range(CAMERAS)]])),
+            Item("Camera", cam_menu),
             Item("Cleanup", Menu(*[pick_cleanup(b) for b in CHOICES])),
             Item("Push-to-talk key", Menu(*[pick_key(k) for k in KEYS])),
             toggle("whisper", False, then=lambda: self.ui(self._whisper_changed)),
