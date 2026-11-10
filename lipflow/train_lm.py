@@ -19,7 +19,7 @@ import time
 import torch
 
 from .personal import PHRASES
-from .vsr import MODELS
+from .vsr import MODELS, apple_gpu
 
 from .paths import PERSONAL_LM
 SPM = os.path.join(MODELS, "lm", "unigram5000.model")
@@ -114,7 +114,7 @@ def train(epochs: int = 3, lr: float = 3e-5, bs: int = 32, max_general_loss: flo
     args = get_model_conf(lm_path, os.path.join(MODELS, "lm", "model.json"))
     lm = dynamic_import_lm(getattr(args, "model_module", "default"), args.backend)(len(token_list), args)
     torch_load(lm_path, lm)
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("mps" if apple_gpu() else "cpu")
     lm.to(device)
 
     before = {"yours": perplexity(lm, val, eos, device), "general": perplexity(lm, general, eos, device)}

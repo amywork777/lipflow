@@ -201,3 +201,24 @@ def test_codex_child_can_find_node(monkeypatch):
     args, kw = calls[0]
     assert args[0] == '/opt/homebrew/bin/codex'
     assert '/opt/homebrew/bin' in kw['env']['PATH'].split(os.pathsep)
+
+
+def test_on_device_model_needs_apple_silicon(monkeypatch):
+    from lipflow import cleanup
+    monkeypatch.setattr(cleanup.sys, "platform", "win32")
+    assert cleanup.unavailable("local") == "Mac only"
+    monkeypatch.setattr(cleanup.sys, "platform", "darwin")
+    monkeypatch.setattr(cleanup.platform, "machine", lambda: "x86_64")
+    assert cleanup.unavailable("local") == "Apple Silicon only"
+    monkeypatch.setattr(cleanup.platform, "machine", lambda: "arm64")
+    assert cleanup.unavailable("local") is None
+
+
+def test_intel_mac_encoder_stays_on_cpu(monkeypatch):
+    from lipflow import vsr
+    monkeypatch.setattr(vsr.torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(vsr.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(vsr.platform, "machine", lambda: "x86_64")
+    assert vsr.pick_encoder_device().type == "cpu"
+    monkeypatch.setattr(vsr.platform, "machine", lambda: "arm64")
+    assert vsr.pick_encoder_device().type == "mps"

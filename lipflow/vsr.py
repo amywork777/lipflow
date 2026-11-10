@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import sys
 import time
 
@@ -30,12 +31,17 @@ MODELS = os.path.join(ROOT, "models")
 _MEAN, _STD = 0.421, 0.165
 
 
+def apple_gpu() -> bool:
+    """MPS on Apple Silicon. Intel Macs report MPS too (AMD GPUs), but it's unreliable there."""
+    return torch.backends.mps.is_available() and platform.machine() == "arm64"
+
+
 def pick_encoder_device(pref: str = "auto") -> torch.device:
     if pref != "auto":
         return torch.device(pref)
     if torch.cuda.is_available():
         return torch.device("cuda")
-    if torch.backends.mps.is_available():
+    if apple_gpu():
         return torch.device("mps")
     return torch.device("cpu")
 
