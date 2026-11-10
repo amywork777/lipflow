@@ -84,9 +84,11 @@ def _linux_checks(line):
         from .linux.hotkey import keyboards_readable
         line(shutil.which("wl-copy") is not None, "wl-copy (clipboard)",
              "install wl-clipboard")
-        line(any(shutil.which(tool) for tool in ("wtype", "ydotool", "dotool")),
-             "Wayland paste (wtype, ydotool, or dotool)",
-             "install wtype (Hyprland, Sway) or ydotool with ydotoold running (GNOME, KDE, other Wayland)")
+        uinput_ok = os.access("/dev/uinput", os.W_OK)
+        paste_ok = any(shutil.which(tool) for tool in ("wtype", "ydotool", "dotool")) or uinput_ok
+        line(paste_ok,
+             "Wayland paste (/dev/uinput, wtype, ydotool, or dotool)",
+             "grant access to /dev/uinput, or install wtype / ydotool with ydotoold running")
         line(keyboards_readable(), "Wayland push-to-talk key (/dev/input)",
              "add your user to the input group and log in again")
     else:

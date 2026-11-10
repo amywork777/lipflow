@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 
 # digraphs first, then single letters → viseme class
 _DIGRAPHS = [("ch", "J"), ("sh", "J"), ("th", "D"), ("ph", "F"), ("ck", "K"), ("qu", "KW"), ("gu", "K"),

@@ -110,10 +110,13 @@ How it differs from the Mac version:
 
 - **Key:** hold **Right Ctrl** by default (tray menu → *Push-to-talk key*: Right Alt / AltGr, Left Alt,
   or Right Shift). Double-tap for hands-free; Esc cancels.
-- **Paste:** Wayland needs [wl-clipboard](https://github.com/bugaevc/wl-clipboard) and one key
-  tool: [wtype](https://github.com/atx/wtype) on Hyprland and Sway, or
-  [ydotool](https://github.com/ReimuNotMoe/ydotool) (with `ydotoold` running) on GNOME, KDE, and
-  other compositors. X11 needs `xdotool` and `xclip`. `--copy-only` leaves the text on the clipboard.
+- **Paste:** Wayland needs [wl-clipboard](https://github.com/bugaevc/wl-clipboard) and a keystroke
+  injector: [wtype](https://github.com/atx/wtype) on Hyprland and Sway, direct `/dev/uinput` via `evdev`
+  (kernel virtual keyboard, works across GNOME, KDE, and wlroots), or [ydotool](https://github.com/ReimuNotMoe/ydotool)
+  (with `ydotoold`). X11 uses `xdotool`, `/dev/uinput`, and `xclip`. `--copy-only` leaves the text on the clipboard.
+  > **Note on `/dev/uinput`:** To allow pasting via `/dev/uinput` without root, ensure your user has access
+  > (e.g. create `/etc/udev/rules.d/99-uinput.rules` with `KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess"`,
+  > or add your user to the `input` group: `sudo usermod -aG input $USER` and reload udev: `sudo udevadm control --reload-rules && sudo udevadm trigger`).
 - **Tray:** pystray needs PyGObject and an AppIndicator typelib. If the pink icon never appears,
   install them (Ubuntu: `gir1.2-ayatanaappindicator3-0.1`).
 - **Camera:** PipeWire/v4l2 (`/dev/video0`). Pick a camera by number in the tray menu if the default

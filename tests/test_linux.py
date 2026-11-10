@@ -73,14 +73,27 @@ def test_wayland_without_wtype_uses_ydotool(monkeypatch):
     from lipflow.linux import paste
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr(paste, "_press_uinput", lambda: False)
     calls = _stub_tools(monkeypatch, paste, {"ydotool"})
     paste._press_ctrl_v()
     assert calls[0][0] == ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
 
 
+def test_wayland_uses_uinput_before_ydotool(monkeypatch):
+    from lipflow.linux import paste
+    monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
+    calls = _stub_tools(monkeypatch, paste, {"ydotool"})
+    uinput_called = []
+    monkeypatch.setattr(paste, "_press_uinput", lambda: uinput_called.append(True) or True)
+    paste._press_ctrl_v()
+    assert uinput_called == [True]
+    assert len(calls) == 0
+
+
 def test_wtype_failure_falls_through_to_ydotool(monkeypatch):
     from lipflow.linux import paste
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(paste, "_press_uinput", lambda: False)
     calls = []
 
     def which(name):
@@ -96,6 +109,19 @@ def test_wtype_failure_falls_through_to_ydotool(monkeypatch):
     monkeypatch.setattr(paste.subprocess, "run", run)
     paste._press_ctrl_v()
     assert [c[0] for c in calls] == ["wtype", "ydotool"]
+
+
+def test_copy_failure_raises_and_never_pastes_old_clipboard(monkeypatch):
+    import pytest
+    from lipflow.linux import paste
+    ctrl_v_called = []
+    monkeypatch.setattr(paste, "_press_ctrl_v", lambda: ctrl_v_called.append(True))
+    def fail_copy(text):
+        raise OSError("clipboard failed")
+    monkeypatch.setattr(paste, "set_text", fail_copy)
+    with pytest.raises(OSError, match="clipboard failed"):
+        paste.paste_text("new text")
+    assert not ctrl_v_called
 
 
 def test_x11_uses_xclip_and_xdotool(monkeypatch):

@@ -72,6 +72,8 @@ def test_escape_cancels_hands_free():
 
 @pytest.mark.skipif(Key is None, reason="No display server for pynput")
 def test_windows_keys_map_through_pynput(monkeypatch):
+    if Key is None:
+        pytest.skip("No keyboard display available")
     from lipflow.win.hotkey import KEYS, PushToTalk
     assert Key.ctrl_r in KEYS["right_control"] and Key.alt_gr in KEYS["right_alt"]
     ptt, log = make(PushToTalk, "right_control")
@@ -88,6 +90,8 @@ def test_windows_keys_map_through_pynput(monkeypatch):
 
 @pytest.mark.skipif(Key is None, reason="No display server for pynput")
 def test_windows_altgr_fake_ctrl_does_not_cancel(monkeypatch):
+    if Key is None:
+        pytest.skip("No keyboard display available")
     from lipflow.win.hotkey import PushToTalk
     monkeypatch.setattr(PushToTalk, "_mask_alt", staticmethod(lambda: None))  # would inject a real key
     ptt, log = make(PushToTalk, "right_alt")
