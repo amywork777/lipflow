@@ -128,6 +128,15 @@ def _compile_launcher(dest: str) -> None:
         f"-Wl,-rpath,{lib}",
         "-o", dest,
     ], check=True)
+    # Some uv / python-build-standalone builds give libpython a placeholder install name
+    # (/install/lib/...), which the linker copies verbatim, so dyld never consults the rpath
+    # and the app dies at launch with "Library not loaded". Point it at the rpath instead.
+    dylib = os.path.join(lib, f"lib{version}.dylib")
+    out = subprocess.run(["otool", "-D", dylib], check=True, capture_output=True, text=True).stdout
+    install_name = out.strip().splitlines()[-1]
+    if not install_name.startswith("@rpath/"):
+        subprocess.run(["install_name_tool", "-change", install_name,
+                        f"@rpath/lib{version}.dylib", dest], check=True)
 
 
 def root_c(path: str) -> str:
