@@ -7,7 +7,9 @@ get() {  # url dest
   [ -s "$2" ] && { echo "✓ $2"; return; }
   mkdir -p "$(dirname "$2")"
   echo "↓ $2"
-  curl -fL --progress-bar -o "$2.part" "$1" && mv "$2.part" "$2"
+  # Wikimedia answers 429 to curl's default User-Agent; name the client and retry rate limits.
+  curl -fL --retry 4 --retry-delay 5 -A "lipflow-setup/1.0 (https://github.com/amywork777/lipflow)" \
+    --progress-bar -o "$2.part" "$1" && mv "$2.part" "$2"
 }
 
 HF=https://huggingface.co

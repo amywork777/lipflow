@@ -18,7 +18,8 @@ function Get-File($url, $dest) {
     if ((Test-Path $dest) -and ((Get-Item $dest).Length -gt 0)) { Write-Host "ok  $dest"; return }
     New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
     Write-Host "get $dest"
-    curl.exe -fL --progress-bar -o "$dest.part" $url
+    # Wikimedia answers 429 to curl's default User-Agent; name the client and retry rate limits.
+    curl.exe -fL --retry 4 --retry-delay 5 -A "lipflow-setup/1.0 (https://github.com/amywork777/lipflow)" --progress-bar -o "$dest.part" $url
     if ($LASTEXITCODE -ne 0) { throw "download failed: $url" }
     Move-Item -Force "$dest.part" $dest
 }
