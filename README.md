@@ -74,7 +74,10 @@ How it differs from the Mac version:
 - **Key:** hold **Right Ctrl** (change it in the tray menu → *Push-to-talk key*: Right Alt / AltGr,
   Left Alt or Right Shift also work). Double-tap for hands-free and Esc to cancel work the same.
 - **Camera:** if it doesn't come on, turn on Settings → Privacy & security → Camera → *Let desktop
-  apps access your camera*. Pick another camera by number in the tray menu.
+  apps access your camera*. Pick another camera by number in the tray menu. If your camera gives
+  DirectShow only black frames, Lipflow switches to Media Foundation by itself and remembers that;
+  to force one, set `LIPFLOW_CAMERA_BACKEND` to `dshow`, `msmf` or `any`
+  (e.g. `setx LIPFLOW_CAMERA_BACKEND msmf`, then restart Lipflow).
 - **Speed:** without an NVIDIA GPU the lip reader runs on the processor, so expect a second or two
   more per sentence than on a Mac (on an M4 Pro the encoder takes 1.7 s on CPU vs 0.16 s on the
   GPU), and training on your face takes several times longer. With an NVIDIA card, install the

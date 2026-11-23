@@ -9,6 +9,7 @@ recording, so the green light isn't on all day.
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -18,7 +19,7 @@ import cv2
 import numpy as np
 
 from .face import FaceObs, FaceTracker
-from .paths import LINUX, WHO, WINDOWS
+from .paths import HOME, LINUX, WHO, WINDOWS
 
 
 @dataclass
@@ -131,6 +132,127 @@ def resolve_camera(pref) -> "int | str":
     return (non_phone or cams)[0]["index"]
 
 
+# -- opening a camera ------------------------------------------------------------------------------
+# Windows has two capture backends and neither works with every camera: DirectShow opens fast and
+# keeps Windows' camera order, but some drivers hand it nothing but black frames; Media Foundation
+# works with those but can take seconds to open. So try them in turn, keep the first that shows a
+# picture, and remember it per camera index. LIPFLOW_CAMERA_BACKEND=dshow|msmf|any forces one.
+
+WIN_BACKENDS = ("dshow", "msmf", "any")
+BACKEND_FILE = os.path.join(HOME, "camera_backend.json")
+PROBE_SECONDS = 1.5  # long enough for exposure to settle on the first frames
+
+
+def _cv_backend(name: str) -> int:
+    return {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "any": cv2.CAP_ANY}[name]
+
+
+def has_picture(frame) -> bool:
+    """False for the all-black (or missing) frames a broken backend returns. A dark room still has
+    some pixels well above zero; a backend that can't decode the stream gives exact zeros."""
+    return frame is not None and frame.size > 0 and int(frame.max()) > 16
+
+
+def probe(cap, seconds: "float | None" = None) -> str:
+    """Read frames for up to `seconds`: 'picture' as soon as one shows something, else 'black' if
+    frames came but were all dark, else 'none'."""
+    deadline = time.time() + (PROBE_SECONDS if seconds is None else seconds)
+    got = False
+    while time.time() < deadline:
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            got = True
+            if has_picture(frame):
+                return "picture"
+        else:
+            time.sleep(0.02)
+    return "black" if got else "none"
+
+
+def _load_known() -> dict:
+    try:
+        with open(BACKEND_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _remember(idx, name: str):
+    d = _load_known()
+    if d.get(str(idx)) == name:
+        return
+    d[str(idx)] = name
+    try:
+        os.makedirs(HOME, exist_ok=True)
+        with open(BACKEND_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+    except OSError:
+        pass
+
+
+def _configure(cap, width: int, height: int):
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+
+
+def windows_open(idx: int, width: int = 1280, height: int = 720):
+    """(cap, backend, status) for the first backend that shows a picture. status is 'picture',
+    'black' (only dark frames from every backend: lens covered, or a broken driver) or 'none'.
+    The cap is always returned; it isn't opened when status is 'none'."""
+    forced = os.environ.get("LIPFLOW_CAMERA_BACKEND", "").strip().lower()
+    known = _load_known().get(str(idx))
+    if forced in WIN_BACKENDS:
+        order = [forced]
+    elif known in WIN_BACKENDS:
+        order = [known] + [b for b in WIN_BACKENDS if b != known]
+    else:
+        order = list(WIN_BACKENDS)
+    black = None  # first (backend, configure) that sent frames, even if only dark ones
+    for name in order:
+        # Some drivers stop sending frames once a resolution is forced; retry at the camera's default.
+        for configure in (True, False):
+            cap = cv2.VideoCapture(idx, _cv_backend(name))
+            if configure:
+                _configure(cap, width, height)
+            if not cap.isOpened():
+                cap.release()
+                break  # opening without a resolution won't help
+            status = probe(cap)
+            if status == "picture":
+                if name != "dshow" or not configure:
+                    print(f"[camera] camera {idx}: using {name.upper()}"
+                          + ("" if configure else " at its default resolution"))
+                _remember(idx, name)
+                return cap, name, status
+            if status == "black" and (name == known or len(order) == 1):
+                # This backend has shown a picture before (or was asked for): a dark room or a
+                # covered lens shouldn't send us hunting through the others every time.
+                return cap, name, status
+            cap.release()
+            if status == "black" and black is None:
+                black = (name, configure)
+    if black is not None:  # nothing but darkness anywhere: use the first that sent frames, but don't remember it
+        name, configure = black
+        cap = cv2.VideoCapture(idx, _cv_backend(name))
+        if configure:
+            _configure(cap, width, height)
+        if cap.isOpened():
+            return cap, name, "black"
+        cap.release()
+    return cv2.VideoCapture(), order[0], "none"
+
+
+def open_capture(idx: int, width: int = 1280, height: int = 720):
+    """An OpenCV capture for camera `idx` at the requested size; check isOpened()."""
+    if WINDOWS:
+        return windows_open(idx, width, height)[0]
+    cap = cv2.VideoCapture(idx) if LINUX else cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
+    _configure(cap, width, height)
+    return cap
+
+
 class Camera:
     def __init__(self, index: "int | str" = "auto", width: int = 1280, height: int = 720, idle_close: float = 45.0,
                  on_frame=None):
@@ -199,16 +321,7 @@ class Camera:
             return cap
         self._file_fps = None
         idx = resolve_camera(self.index)
-        # DirectShow opens fast and keeps the order Windows lists cameras in; MSMF can take seconds.
-        if WINDOWS:
-            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-        elif LINUX:
-            cap = cv2.VideoCapture(idx)
-        else:
-            cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap = open_capture(idx, self.width, self.height)
         if not cap.isOpened():
             if WINDOWS:
                 raise RuntimeError("Could not open the camera. Turn on Settings → Privacy & security → Camera → "

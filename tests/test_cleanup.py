@@ -71,6 +71,8 @@ def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
     assert len(s) == 24 and len(set(s)) == 24 and all(x in O.HARVARD for x in s)
 
 
+@pytest.mark.skipif(not os.path.exists(os.path.join(os.path.dirname(__file__), "..", "models", "lm", "unigram5000.model")),
+                    reason="run ./setup.sh to download the models")
 def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
 

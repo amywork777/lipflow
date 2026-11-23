@@ -66,16 +66,20 @@ def _mac_checks(line):
 
 def _windows_checks(line):
     """Windows grants keyboard hooks and pasting to every desktop app; only the camera can be off."""
-    import cv2
-    from .camera import resolve_camera
+    from .camera import resolve_camera, windows_open
     from .dictation import load_settings
     idx = resolve_camera(load_settings().get("camera", "auto"))
-    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-    ok = cap.isOpened() and cap.read()[0]
+    cap, backend, status = windows_open(idx)
     cap.release()
-    line(ok, f"Camera {idx} opens and sends frames",
-         "Settings → Privacy & security → Camera → turn on \"Let desktop apps access your camera\", "
-         "and close other apps using the camera")
+    if status == "black":
+        line(False, f"Camera {idx} opens but only sends black frames ({backend.upper()})",
+             "uncover the lens or turn on a light; if it stays black, try "
+             "LIPFLOW_CAMERA_BACKEND=msmf (or dshow / any), or another camera from the tray menu")
+    else:
+        line(status == "picture", f"Camera {idx} opens and sends frames"
+             + (f" ({backend.upper()})" if status == "picture" else ""),
+             "Settings → Privacy & security → Camera → turn on \"Let desktop apps access your camera\", "
+             "and close other apps using the camera")
 
 
 def _linux_checks(line):
